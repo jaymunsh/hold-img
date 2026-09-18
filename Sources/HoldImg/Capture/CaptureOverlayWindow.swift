@@ -59,6 +59,13 @@ final class CaptureOverlayView: NSView {
     private var hoveredWindowIndex: Int?
     private var copiedFlashUntil: Date?
 
+    /// Aspect ratio (w/h) the drag selection is locked to, if any.
+    private var aspectLock: CGFloat?
+    /// Exact-size capture box that follows the cursor until clicked.
+    private var fixedSize: CGSize?
+    private var constraintLabel = "자유"
+    private var sizeField: NSTextField?
+
     init(frame: NSRect,
          displayFrame: DisplayFrame,
          mode: CaptureCoordinator.Mode,
@@ -101,6 +108,14 @@ final class CaptureOverlayView: NSView {
         let p = clampToBounds(convert(event.locationInWindow, from: nil))
         switch mode {
         case .region:
+            if let size = fixedSize {
+                // Fixed-size box: click commits the capture at this spot.
+                selection = clampedBox(centeredAt: p, size: size)
+                if let overlayWindow {
+                    coordinator.overlay(overlayWindow, didSelect: selection)
+                }
+                return
+            }
             dragStart = p
             selection = CGRect(origin: p, size: .zero)
         case .window:
@@ -115,7 +130,7 @@ final class CaptureOverlayView: NSView {
         let p = clampToBounds(convert(event.locationInWindow, from: nil))
         cursor = p
         if let start = dragStart {
-            selection = normalizedRect(from: start, to: p)
+            selection = constrainedRect(from: start, to: p)
         }
         needsDisplay = true
     }
@@ -125,15 +140,18 @@ final class CaptureOverlayView: NSView {
             dragStart = nil
             needsDisplay = true
         }
-        guard mode == .region, let overlayWindow else { return }
-        let rect = normalizedRect(from: dragStart ?? selection.origin,
-                                  to: clampToBounds(convert(event.locationInWindow, from: nil)))
+        guard mode == .region, fixedSize == nil, let overlayWindow else { return }
+        let rect = constrainedRect(from: dragStart ?? selection.origin,
+                                   to: clampToBounds(convert(event.locationInWindow, from: nil)))
         coordinator.overlay(overlayWindow, didSelect: rect)
     }
 
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         cursor = p
+        if let size = fixedSize {
+            selection = clampedBox(centeredAt: p, size: size)
+        }
         if mode == .window {
             hoveredWindowIndex = windowRects.firstIndex { $0.rect.contains(p) }
         }
@@ -150,11 +168,24 @@ final class CaptureOverlayView: NSView {
             if let overlayWindow { coordinator.overlayDidCancel(overlayWindow) }
             return
         }
-        if event.charactersIgnoringModifiers?.lowercased() == "c",
-           let cursor, let color = colorAtViewPoint(cursor) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(color.hexString, forType: .string)
-            copiedFlashUntil = Date().addingTimeInterval(0.8)
+        if mode == .region,
+           let key = event.charactersIgnoringModifiers?.lowercased() {
+            switch key {
+            case "1": setConstraint(nil, nil, "자유")
+            case "2": setConstraint(1, nil, "1:1")
+            case "3": setConstraint(4.0 / 3.0, nil, "4:3")
+            case "4": setConstraint(16.0 / 9.0, nil, "16:9")
+            case "5": setConstraint(1.6, nil, "16:10")
+            case "6": showSizeInput()
+            case "c":
+                if let cursor, let color = colorAtViewPoint(cursor) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(color.hexString, forType: .string)
+                    copiedFlashUntil = Date().addingTimeInterval(0.8)
+                }
+            default:
+                super.keyDown(with: event)
+            }
             needsDisplay = true
             return
         }
@@ -202,9 +233,17 @@ final class CaptureOverlayView: NSView {
     }
 
     private func drawHint() {
-        let text = mode == .region
-            ? "드래그로 영역 선택 · C: 컬러 복사 · Esc: 취소"
-            : "캡처할 윈도우 클릭 · Esc: 취소"
+        let text: String
+        switch mode {
+        case .window:
+            text = "캡처할 윈도우 클릭 · Esc: 취소"
+        case .region where fixedSize != nil:
+            text = "클릭으로 \(constraintLabel) 캡처 · 6: 크기 변경 · 1: 해제 · Esc: 취소"
+        case .region where aspectLock != nil:
+            text = "드래그로 영역 선택 · 비율: \(constraintLabel) [1~6 변경] · C: 컬러 복사 · Esc: 취소"
+        case .region:
+            text = "드래그로 영역 선택 · 비율 [1 자유 · 2 1:1 · 3 4:3 · 4 16:9 · 5 16:10 · 6 직접입력] · C: 컬러 복사 · Esc: 취소"
+        }
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .medium),
             .foregroundColor: NSColor.white.withAlphaComponent(0.85),
@@ -273,6 +312,71 @@ final class CaptureOverlayView: NSView {
 
     // MARK: - Helpers
 
+    private func setConstraint(_ ratio: CGFloat?, _ size: CGSize?, _ label: String) {
+        aspectLock = ratio
+        fixedSize = size
+        constraintLabel = label
+    }
+
+    /// Drag rect honoring the active aspect lock.
+    private func constrainedRect(from a: CGPoint, to b: CGPoint) -> CGRect {
+        var w = abs(b.x - a.x), h = abs(b.y - a.y)
+        if let r = aspectLock {
+            if w / max(h, 1) > r { w = h * r } else { h = w / r }
+        }
+        let x = b.x >= a.x ? a.x : a.x - w
+        let y = b.y >= a.y ? a.y : a.y - h
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    /// A `size` box centered on `p`, clamped inside the view.
+    private func clampedBox(centeredAt p: CGPoint, size: CGSize) -> CGRect {
+        let w = min(size.width, bounds.width)
+        let h = min(size.height, bounds.height)
+        let x = min(max(p.x - w / 2, bounds.minX), bounds.maxX - w)
+        let y = min(max(p.y - h / 2, bounds.minY), bounds.maxY - h)
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    private func showSizeInput() {
+        guard sizeField == nil else { return }
+        let field = NSTextField(frame: NSRect(x: bounds.midX - 90,
+                                              y: bounds.height - 100,
+                                              width: 180, height: 26))
+        field.placeholderString = "1920x1080"
+        field.bezelStyle = .roundedBezel
+        field.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        field.alignment = .center
+        field.target = self
+        field.action = #selector(commitSizeInput(_:))
+        field.delegate = self
+        addSubview(field)
+        sizeField = field
+        window?.makeFirstResponder(field)
+    }
+
+    @objc private func commitSizeInput(_ sender: NSTextField) {
+        // Grab the first two numbers regardless of separator (x, ×, space, ...).
+        let nums = sender.stringValue
+            .components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted)
+            .filter { !$0.isEmpty }
+            .compactMap(Double.init)
+        dismissSizeInput()
+        if nums.count >= 2, nums[0] >= 4, nums[1] >= 4 {
+            setConstraint(nil, CGSize(width: nums[0], height: nums[1]),
+                          "\(Int(nums[0]))×\(Int(nums[1]))")
+            if let cursor {
+                selection = clampedBox(centeredAt: cursor, size: fixedSize!)
+            }
+        }
+    }
+
+    private func dismissSizeInput() {
+        sizeField?.removeFromSuperview()
+        sizeField = nil
+        window?.makeFirstResponder(self)
+    }
+
     private func colorAtViewPoint(_ p: CGPoint) -> NSColor? {
         guard let sampler, bounds.width > 0, bounds.height > 0 else { return nil }
         let px = p.x / bounds.width * imageSize.width
@@ -284,9 +388,15 @@ final class CaptureOverlayView: NSView {
         CGPoint(x: min(max(p.x, bounds.minX), bounds.maxX),
                 y: min(max(p.y, bounds.minY), bounds.maxY))
     }
+}
 
-    private func normalizedRect(from a: CGPoint, to b: CGPoint) -> CGRect {
-        CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
-               width: abs(a.x - b.x), height: abs(a.y - b.y))
+extension CaptureOverlayView: NSTextFieldDelegate {
+    func control(_ control: NSControl, textView: NSTextView,
+                 doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            dismissSizeInput()
+            return true
+        }
+        return false
     }
 }
