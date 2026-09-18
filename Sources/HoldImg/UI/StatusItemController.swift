@@ -8,10 +8,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     override init() {
         super.init()
-        item.button?.image = NSImage(
-            systemSymbolName: "photo.on.rectangle.angled",
-            accessibilityDescription: "HoldImg"
-        )
+        item.button?.image = Self.menuBarImage()
         let menu = NSMenu()
         menu.delegate = self
 
@@ -38,6 +35,26 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(action("HoldImg 종료", #selector(quit), keyEquivalent: "q"))
 
         item.menu = menu
+    }
+
+    private static func menuBarImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18))
+        for name in ["menubar_18", "menubar_36", "menubar_54"] {
+            if let path = Bundle.main.path(forResource: name, ofType: "png"),
+               let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+               let rep = NSBitmapImageRep(data: data) {
+                rep.size = NSSize(width: 18, height: 18)
+                image.addRepresentation(rep)
+            }
+        }
+        if image.representations.isEmpty,
+           let symbol = NSImage(systemSymbolName: "photo.on.rectangle.angled",
+                                accessibilityDescription: "HoldImg") {
+            symbol.isTemplate = true
+            return symbol
+        }
+        image.isTemplate = true
+        return image
     }
 
     // MARK: - Menu construction helpers
