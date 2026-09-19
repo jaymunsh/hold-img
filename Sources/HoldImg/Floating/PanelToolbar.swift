@@ -7,18 +7,33 @@ final class PanelToolbar: NSVisualEffectView {
     enum Action {
         case pen, copy, save, close
         case color(Int), undo, clear, done
-        case toggleLock
+        case toggleLock, ocr
+        case tool(Int)
     }
 
     enum Mode { case normal, pen }
 
     static let penColors: [NSColor] = [.systemRed, .systemYellow, .systemGreen, .systemBlue]
 
+    /// SF Symbols + tooltips for the annotation tools, in AnnotationTool order.
+    private static let toolButtons: [(symbol: String, tip: String)] = [
+        ("pencil.tip", "펜 — 자유곡선"),
+        ("arrow.up.right", "화살표"),
+        ("square", "사각형"),
+        ("square.grid.3x3", "모자이크"),
+        ("textformat", "텍스트"),
+    ]
+
+    /// Size of the button stack, including insets — reliable right after
+    /// rebuild(), unlike NSVisualEffectView.fittingSize.
+    var contentSize: CGSize { stack.fittingSize }
+
     var onAction: ((Action) -> Void)?
 
     private(set) var mode: Mode = .normal
     private var penModeActive: Bool { mode == .pen }
     private var colorIndex = 0
+    private var toolIndex = 0
     private var aspectLocked = true
     private let stack = NSStackView()
     private var tracking: NSTrackingArea?
@@ -60,6 +75,11 @@ final class PanelToolbar: NSVisualEffectView {
 
     func setColorIndex(_ index: Int) {
         colorIndex = index
+        rebuild()
+    }
+
+    func setToolIndex(_ index: Int) {
+        toolIndex = index
         rebuild()
     }
 
@@ -128,11 +148,17 @@ final class PanelToolbar: NSVisualEffectView {
             addButton(symbol: "pencil.tip", tag: 1, tip: "펜으로 표시 (P)")
             addButton(symbol: "doc.on.doc", tag: 2, tip: "복사 (⌘C)")
             addButton(symbol: "square.and.arrow.down", tag: 3, tip: "다른 이름으로 저장 (⌘S)")
+            addButton(symbol: "text.viewfinder", tag: 9, tip: "텍스트 추출 (OCR) — 클립보드로 복사")
             addButton(symbol: aspectLocked ? "lock.fill" : "lock.open.fill",
                       tag: 8, tip: "비율 잠금 — 해제 시 자유 리사이즈",
                       tint: aspectLocked ? nil : .controlAccentColor)
             addButton(symbol: "xmark", tag: 4, tip: "닫기 (⌘W/Esc)")
         case .pen:
+            for (i, spec) in Self.toolButtons.enumerated() {
+                addButton(symbol: spec.symbol, tag: 200 + i, tip: spec.tip,
+                          tint: i == toolIndex ? .controlAccentColor : nil)
+            }
+            addSeparator()
             for (i, color) in Self.penColors.enumerated() {
                 addColorButton(index: i, color: color)
             }
@@ -142,13 +168,16 @@ final class PanelToolbar: NSVisualEffectView {
             addButton(symbol: "checkmark", tag: 7, tip: "완료 — 이미지에 적용")
         }
         // Keep the top-right corner anchored as the capsule resizes.
+        // Use the stack's fitting size — the effect view's fittingSize can
+        // lag behind a rebuild and produce a too-narrow frame that lets
+        // buttons spill past the panel edge.
+        let size = contentSize
         if let host = superview {
-            let size = fittingSize
             frame = CGRect(x: host.bounds.maxX - size.width - 8,
                            y: host.bounds.maxY - size.height - 8,
                            width: size.width, height: size.height)
         } else {
-            frame.size = fittingSize
+            frame.size = size
         }
     }
 
@@ -210,6 +239,8 @@ final class PanelToolbar: NSVisualEffectView {
         case 6: action = .clear
         case 7: action = .done
         case 8: action = .toggleLock
+        case 9: action = .ocr
+        case 200...204: action = .tool(sender.tag - 200)
         default: action = .color(sender.tag - 100)
         }
         onAction?(action)

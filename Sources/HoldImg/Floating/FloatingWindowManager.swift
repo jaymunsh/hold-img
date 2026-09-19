@@ -44,7 +44,9 @@ final class FloatingWindowManager {
             queue: .main
         ) { [weak self] note in
             guard let closing = note.object as? FloatingPanel else { return }
-            self?.panels.removeAll { $0 === closing }
+            Task { @MainActor [weak self] in
+                self?.panels.removeAll { $0 === closing }
+            }
         }
         return panel
     }

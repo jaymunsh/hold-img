@@ -44,7 +44,7 @@ final class FloatingPanel: NSPanel {
         guard let contentView else { return }
         contentView.addSubview(hoverToolbar)
         hoverToolbar.autoresizingMask = [.minXMargin, .minYMargin]
-        let size = hoverToolbar.fittingSize
+        let size = hoverToolbar.contentSize
         hoverToolbar.frame = CGRect(x: contentView.bounds.maxX - size.width - 8,
                                y: contentView.bounds.maxY - size.height - 8,
                                width: size.width, height: size.height)
@@ -68,6 +68,15 @@ final class FloatingPanel: NSPanel {
         case .toggleLock:
             aspectLocked.toggle()
             hoverToolbar.setLocked(aspectLocked)
+        case .ocr:
+            if OCRService.copyText(from: image) {
+                view.flashCopyFeedback()
+            } else {
+                NSSound.beep()
+            }
+        case .tool(let index):
+            view.selectTool(index)
+            hoverToolbar.setToolIndex(index)
         case .color(let index):
             view.selectPenColor(index)
             hoverToolbar.setColorIndex(index)

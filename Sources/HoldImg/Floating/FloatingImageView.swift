@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import UniformTypeIdentifiers
 
 /// Content view of a floating panel: draws the image aspect-fit and handles
@@ -12,12 +13,23 @@ final class FloatingImageView: NSView {
         case none, topLeft, topRight, bottomLeft, bottomRight
     }
 
-    /// Freehand annotation in normalized (0...1) image coordinates so strokes
-    /// stay aligned when the panel is resized or zoomed.
-    private struct Stroke {
-        var points: [CGPoint]
+    /// A drawn annotation in normalized (0...1) image coordinates so it
+    /// stays aligned when the panel is resized or zoomed.
+    private struct Annotation {
+        enum Shape {
+            case freehand([CGPoint])
+            case arrow(from: CGPoint, to: CGPoint)
+            case rect(CGRect)
+            case mosaic(CGRect)
+            case text(String, CGPoint)
+        }
+        var shape: Shape
         var color: NSColor
         var widthNorm: CGFloat  // fraction of image height
+    }
+
+    enum AnnotationTool: Int {
+        case pen, arrow, rect, mosaic, text
     }
 
     private var dragStartGlobal: CGPoint = .zero
@@ -35,8 +47,12 @@ final class FloatingImageView: NSView {
     private var dragFileURL: URL?
 
     private(set) var isPenMode = false
-    private var strokes: [Stroke] = []
-    private var activeStroke: Stroke?
+    private var annotations: [Annotation] = []
+    private var activeStroke: [CGPoint]?
+    private var dragAnchor: CGPoint?
+    private var activeShape: Annotation.Shape?
+    private var tool: AnnotationTool = .pen
+    private var textField: NSTextField?
     private var penColorIndex = 0
     private var hoverTracking: NSTrackingArea?
 
@@ -56,18 +72,97 @@ final class FloatingImageView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         image.draw(in: bounds)
-        for stroke in strokes + [activeStroke].compactMap({ $0 }) {
-            stroke.color.setStroke()
+        for ann in annotations {
+            drawAnnotation(ann.shape, color: ann.color, widthNorm: ann.widthNorm)
+        }
+        if let pts = activeStroke {
+            drawAnnotation(.freehand(pts), color: penColor, widthNorm: strokeWidthNorm)
+        }
+        if let shape = activeShape {
+            drawAnnotation(shape, color: penColor, widthNorm: strokeWidthNorm)
+        }
+    }
+
+    private var penColor: NSColor { PanelToolbar.penColors[penColorIndex] }
+    private var strokeWidthNorm: CGFloat { 3.0 / max(bounds.height, 1) }
+    private var textFontNorm: CGFloat { 0.05 }
+
+    private func drawAnnotation(_ shape: Annotation.Shape,
+                                color: NSColor, widthNorm: CGFloat) {
+        let lw = max(widthNorm * bounds.height, 0.5)
+        switch shape {
+        case .freehand(let points):
+            color.setStroke()
             let path = NSBezierPath()
-            path.lineWidth = max(stroke.widthNorm * bounds.height, 0.5)
+            path.lineWidth = lw
             path.lineCapStyle = .round
             path.lineJoinStyle = .round
-            for (i, p) in stroke.points.enumerated() {
+            for (i, p) in points.enumerated() {
                 let v = denormalize(p)
                 i == 0 ? path.move(to: v) : path.line(to: v)
             }
             path.stroke()
+        case .arrow(let a, let b):
+            color.setStroke()
+            let path = arrowPath(from: denormalize(a), to: denormalize(b),
+                                 headLength: lw * 5)
+            path.lineWidth = lw
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            path.stroke()
+        case .rect(let r):
+            color.setStroke()
+            let path = NSBezierPath(rect: denormalizeRect(r))
+            path.lineWidth = lw
+            path.stroke()
+        case .mosaic(let r):
+            drawMosaic(in: denormalizeRect(r))
+        case .text(let s, let p):
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: textFontNorm * bounds.height,
+                                         weight: .bold),
+                .foregroundColor: color,
+            ]
+            NSAttributedString(string: s, attributes: attrs)
+                .draw(at: denormalize(p))
         }
+    }
+
+    /// Line from `a` to `b` with a V-shaped arrowhead at `b`.
+    private func arrowPath(from a: CGPoint, to b: CGPoint,
+                           headLength: CGFloat) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: a)
+        path.line(to: b)
+        let angle = atan2(b.y - a.y, b.x - a.x)
+        for side in [-1.0, 1.0] as [CGFloat] {
+            let a2 = angle + CGFloat.pi + side * (CGFloat.pi / 6)
+            path.move(to: b)
+            path.line(to: CGPoint(x: b.x + headLength * cos(a2),
+                                  y: b.y + headLength * sin(a2)))
+        }
+        return path
+    }
+
+    /// Pixelates a region of the image (view coordinates) as a live
+    /// preview for the mosaic tool.
+    private func drawMosaic(in viewRect: CGRect) {
+        let factor: CGFloat = 12
+        let smallSize = CGSize(width: max(viewRect.width / factor, 1),
+                               height: max(viewRect.height / factor, 1))
+        let sx = image.size.width / max(bounds.width, 1)
+        let sy = image.size.height / max(bounds.height, 1)
+        let src = CGRect(x: viewRect.minX * sx, y: viewRect.minY * sy,
+                         width: viewRect.width * sx, height: viewRect.height * sy)
+        let small = NSImage(size: smallSize)
+        small.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: smallSize), from: src,
+                   operation: .copy, fraction: 1)
+        small.unlockFocus()
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSGraphicsContext.current?.imageInterpolation = .none
+        small.draw(in: viewRect)
+        NSGraphicsContext.current?.restoreGraphicsState()
     }
 
     // MARK: - Hover tracking / toolbar
@@ -99,7 +194,7 @@ final class FloatingImageView: NSView {
         if isPenMode { NSCursor.crosshair.set() }
     }
 
-    // MARK: - Pen mode
+    // MARK: - Annotation mode
 
     func enterPenMode() {
         isPenMode = true
@@ -107,28 +202,39 @@ final class FloatingImageView: NSView {
     }
 
     func exitPenMode(bake: Bool) {
+        commitTextField()
         if bake, let baked = bakeAnnotations() {
             image = baked
             panel?.setImage(baked)
         }
-        strokes.removeAll()
+        annotations.removeAll()
         activeStroke = nil
+        activeShape = nil
+        dragAnchor = nil
         isPenMode = false
         needsDisplay = true
     }
 
+    func selectTool(_ index: Int) {
+        tool = AnnotationTool(rawValue: index) ?? .pen
+        commitTextField()
+        NSCursor.crosshair.set()
+    }
+
     func undoStroke() {
-        if activeStroke != nil {
+        if activeStroke != nil || activeShape != nil {
             activeStroke = nil
+            activeShape = nil
         } else {
-            strokes.popLast()
+            _ = annotations.popLast()
         }
         needsDisplay = true
     }
 
     func clearStrokes() {
-        strokes.removeAll()
+        annotations.removeAll()
         activeStroke = nil
+        activeShape = nil
         needsDisplay = true
     }
 
@@ -144,46 +250,137 @@ final class FloatingImageView: NSView {
         CGPoint(x: p.x * bounds.width, y: p.y * bounds.height)
     }
 
+    private func denormalizeRect(_ r: CGRect) -> CGRect {
+        CGRect(x: r.minX * bounds.width, y: r.minY * bounds.height,
+               width: r.width * bounds.width, height: r.height * bounds.height)
+    }
+
     private func clampNorm(_ p: CGPoint) -> CGPoint {
         CGPoint(x: min(max(p.x, 0), 1), y: min(max(p.y, 0), 1))
     }
 
+    /// Shape preview for drag-based tools (arrow / rect / mosaic).
+    private func shapeFrom(anchor: CGPoint, to current: CGPoint) -> Annotation.Shape {
+        let a = normalize(anchor), b = normalize(current)
+        switch tool {
+        case .arrow:
+            return .arrow(from: a, to: b)
+        case .rect, .mosaic:
+            let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
+                           width: abs(b.x - a.x), height: abs(b.y - a.y))
+            return tool == .rect ? .rect(r) : .mosaic(r)
+        case .pen, .text:
+            return .freehand([a, b])
+        }
+    }
+
+    /// View-space bounds of a shape, used for partial invalidation.
+    private func shapeBounds(_ shape: Annotation.Shape) -> CGRect {
+        switch shape {
+        case .freehand(let points):
+            guard let first = points.first else { return .null }
+            var r = CGRect(origin: denormalize(first), size: .zero)
+            for p in points.dropFirst() {
+                r = r.union(CGRect(origin: denormalize(p), size: .zero))
+            }
+            return r
+        case .arrow(let a, let b):
+            let va = denormalize(a), vb = denormalize(b)
+            return CGRect(x: min(va.x, vb.x), y: min(va.y, vb.y),
+                          width: abs(vb.x - va.x), height: abs(vb.y - va.y))
+        case .rect(let r), .mosaic(let r):
+            return denormalizeRect(r)
+        case .text(let s, let p):
+            let size = NSAttributedString(
+                string: s,
+                attributes: [.font: NSFont.systemFont(
+                    ofSize: textFontNorm * bounds.height, weight: .bold)]
+            ).size()
+            return CGRect(origin: denormalize(p), size: size)
+        }
+    }
+
     private func beginStroke(at point: CGPoint) {
-        activeStroke = Stroke(points: [normalize(point)],
-                              color: PanelToolbar.penColors[penColorIndex],
-                              widthNorm: 3.0 / max(bounds.height, 1))
+        activeStroke = [normalize(point)]
     }
 
     private func appendStroke(at point: CGPoint) {
-        let prev = activeStroke?.points.last.map(denormalize)
-        activeStroke?.points.append(normalize(point))
+        let prev = activeStroke?.last.map(denormalize)
+        activeStroke?.append(normalize(point))
         // Repaint only the new segment instead of the whole image per event.
         let a = prev ?? point
-        let pad = max((activeStroke?.widthNorm ?? 0) * bounds.height, 0.5) + 2
+        let pad = max(strokeWidthNorm * bounds.height, 0.5) + 2
         setNeedsDisplay(CGRect(x: min(a.x, point.x) - pad, y: min(a.y, point.y) - pad,
                                width: abs(point.x - a.x) + pad * 2,
                                height: abs(point.y - a.y) + pad * 2))
     }
 
     private func endStroke() {
-        guard var stroke = activeStroke else { return }
-        if stroke.points.count == 1 {
+        guard var pts = activeStroke else { return }
+        if pts.count == 1 {
             // A single tap: nudge a second point so a round dot is drawn.
-            stroke.points.append(CGPoint(x: stroke.points[0].x + 0.002,
-                                         y: stroke.points[0].y))
+            pts.append(CGPoint(x: pts[0].x + 0.002, y: pts[0].y))
         }
-        strokes.append(stroke)
+        annotations.append(Annotation(shape: .freehand(pts), color: penColor,
+                                      widthNorm: strokeWidthNorm))
         activeStroke = nil
         needsDisplay = true
     }
 
-    /// Renders the strokes onto the image at its native pixel size.
+    // MARK: - Text annotation input
+
+    private func showTextInput(at viewPoint: CGPoint) {
+        commitTextField()
+        let fontSize = textFontNorm * bounds.height
+        let field = NSTextField(frame: NSRect(x: viewPoint.x, y: viewPoint.y - 2,
+                                              width: 180,
+                                              height: max(fontSize + 8, 22)))
+        field.isBezeled = true
+        field.bezelStyle = .roundedBezel
+        field.font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        field.textColor = penColor
+        field.target = self
+        field.action = #selector(textFieldCommitted(_:))
+        field.delegate = self
+        addSubview(field)
+        textField = field
+        // Defer until the click that spawned the field has finished, or the
+        // field editor may not be ready to take first responder.
+        DispatchQueue.main.async { [weak self, weak field] in
+            self?.window?.makeFirstResponder(field)
+        }
+    }
+
+    @objc private func textFieldCommitted(_ sender: NSTextField) {
+        commitTextField()
+    }
+
+    /// Adds the field's text as an annotation (or just removes the field
+    /// when the text is empty), returning focus to the panel.
+    private func commitTextField() {
+        guard let field = textField else { return }
+        let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+        if !text.isEmpty {
+            // Anchor = the text's top-left in normalized coordinates.
+            let p = CGPoint(x: field.frame.minX / max(bounds.width, 1),
+                            y: (field.frame.maxY - 4) / max(bounds.height, 1))
+            annotations.append(Annotation(shape: .text(text, p),
+                                          color: penColor,
+                                          widthNorm: strokeWidthNorm))
+        }
+        field.removeFromSuperview()
+        textField = nil
+        needsDisplay = true
+        window?.makeFirstResponder(self)
+    }
+
+    /// Renders the annotations onto the image at its native pixel size.
     private func bakeAnnotations() -> NSImage? {
-        guard !strokes.isEmpty,
+        guard !annotations.isEmpty,
               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return nil }
-        let pxW = cg.width, pxH = cg.height
-        guard let ctx = CGContext(data: nil, width: pxW, height: pxH,
+        let pxW = CGFloat(cg.width), pxH = CGFloat(cg.height)
+        guard let ctx = CGContext(data: nil, width: Int(pxW), height: Int(pxH),
                                   bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(),
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
@@ -191,15 +388,38 @@ final class FloatingImageView: NSView {
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: pxW, height: pxH))
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
-        for stroke in strokes {
-            ctx.setStrokeColor(stroke.color.cgColor)
-            ctx.setLineWidth(max(stroke.widthNorm * CGFloat(pxH), 0.5))
-            for (i, raw) in stroke.points.enumerated() {
-                let p = clampNorm(raw)
-                let v = CGPoint(x: p.x * CGFloat(pxW), y: p.y * CGFloat(pxH))
-                i == 0 ? ctx.move(to: v) : ctx.addLine(to: v)
+        for ann in annotations {
+            let lw = max(ann.widthNorm * pxH, 0.5)
+            switch ann.shape {
+            case .freehand(let points):
+                ctx.setStrokeColor(ann.color.cgColor)
+                ctx.setLineWidth(lw)
+                for (i, raw) in points.enumerated() {
+                    let p = clampNorm(raw)
+                    let v = CGPoint(x: p.x * pxW, y: p.y * pxH)
+                    i == 0 ? ctx.move(to: v) : ctx.addLine(to: v)
+                }
+                ctx.strokePath()
+            case .arrow(let a, let b):
+                ctx.setStrokeColor(ann.color.cgColor)
+                ctx.setLineWidth(lw)
+                bakeArrow(ctx, from: CGPoint(x: a.x * pxW, y: a.y * pxH),
+                          to: CGPoint(x: b.x * pxW, y: b.y * pxH),
+                          headLength: lw * 5)
+            case .rect(let r):
+                ctx.setStrokeColor(ann.color.cgColor)
+                ctx.setLineWidth(lw)
+                ctx.stroke(CGRect(x: r.minX * pxW, y: r.minY * pxH,
+                                  width: r.width * pxW, height: r.height * pxH))
+            case .mosaic(let r):
+                bakeMosaic(ctx, source: cg,
+                           rect: CGRect(x: r.minX * pxW, y: r.minY * pxH,
+                                        width: r.width * pxW, height: r.height * pxH),
+                           canvasH: pxH)
+            case .text(let s, let p):
+                bakeText(ctx, s, at: CGPoint(x: p.x * pxW, y: p.y * pxH),
+                         fontSize: textFontNorm * pxH, color: ann.color)
             }
-            ctx.strokePath()
         }
         guard let out = ctx.makeImage() else { return nil }
         let rep = NSBitmapImageRep(cgImage: out)
@@ -209,11 +429,74 @@ final class FloatingImageView: NSView {
         return result
     }
 
+    private func bakeArrow(_ ctx: CGContext, from a: CGPoint, to b: CGPoint,
+                           headLength: CGFloat) {
+        ctx.move(to: a)
+        ctx.addLine(to: b)
+        let angle = atan2(b.y - a.y, b.x - a.x)
+        for side in [-1.0, 1.0] as [CGFloat] {
+            let a2 = angle + CGFloat.pi + side * (CGFloat.pi / 6)
+            ctx.move(to: b)
+            ctx.addLine(to: CGPoint(x: b.x + headLength * cos(a2),
+                                    y: b.y + headLength * sin(a2)))
+        }
+        ctx.strokePath()
+    }
+
+    /// Downscales then re-scales the rect region so it is baked pixelated.
+    private func bakeMosaic(_ ctx: CGContext, source cg: CGImage,
+                            rect: CGRect, canvasH: CGFloat) {
+        let factor: CGFloat = 12
+        // CGImage rows are top-down; the context draws bottom-up.
+        let cropRect = CGRect(x: rect.minX, y: canvasH - rect.maxY,
+                              width: rect.width, height: rect.height)
+        guard let crop = cg.cropping(to: cropRect) else { return }
+        let w = max(Int(rect.width / factor), 1)
+        let h = max(Int(rect.height / factor), 1)
+        guard let small = CGContext(data: nil, width: w, height: h,
+                                    bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpaceCreateDeviceRGB(),
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return }
+        small.interpolationQuality = .low
+        small.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let sImg = small.makeImage() else { return }
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        ctx.draw(sImg, in: rect)
+        ctx.restoreGState()
+    }
+
+    /// Draws text with CoreText so it is not flipped in the CG context.
+    private func bakeText(_ ctx: CGContext, _ s: String, at topLeft: CGPoint,
+                          fontSize: CGFloat, color: NSColor) {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+        ]
+        let attrStr = NSAttributedString(string: s, attributes: attrs)
+        let line = CTLineCreateWithAttributedString(attrStr)
+        // topLeft is the text's top edge; place the baseline under it.
+        ctx.textPosition = CGPoint(x: topLeft.x,
+                                   y: topLeft.y - font.ascender)
+        CTLineDraw(line, ctx)
+    }
+
     // MARK: - Mouse
 
     override func mouseDown(with event: NSEvent) {
         if isPenMode {
-            beginStroke(at: convert(event.locationInWindow, from: nil))
+            let p = convert(event.locationInWindow, from: nil)
+            switch tool {
+            case .pen:
+                beginStroke(at: p)
+            case .arrow, .rect, .mosaic:
+                dragAnchor = p
+                activeShape = nil
+            case .text:
+                showTextInput(at: p)
+            }
             return
         }
         if event.clickCount == 2 {
@@ -228,7 +511,20 @@ final class FloatingImageView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         if isPenMode {
-            appendStroke(at: convert(event.locationInWindow, from: nil))
+            let p = convert(event.locationInWindow, from: nil)
+            switch tool {
+            case .pen:
+                appendStroke(at: p)
+            case .arrow, .rect, .mosaic:
+                guard let anchor = dragAnchor else { return }
+                // Repaint the union of old and new preview bounds.
+                var dirty = activeShape.map { shapeBounds($0) } ?? .null
+                activeShape = shapeFrom(anchor: anchor, to: p)
+                dirty = dirty.union(shapeBounds(activeShape!))
+                setNeedsDisplay(dirty.insetBy(dx: -8, dy: -8).intersection(bounds))
+            case .text:
+                break
+            }
             return
         }
         guard let window else { return }
@@ -249,7 +545,14 @@ final class FloatingImageView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if isPenMode {
-            endStroke()
+            if tool == .pen {
+                endStroke()
+            } else if let shape = activeShape {
+                annotations.append(Annotation(shape: shape, color: penColor,
+                                              widthNorm: strokeWidthNorm))
+                activeShape = nil
+            }
+            dragAnchor = nil
             return
         }
         if !didMove, dragCorner == .none {
@@ -333,6 +636,7 @@ final class FloatingImageView: NSView {
         copyItem.keyEquivalentModifierMask = .command
         let saveItem = menu.addItem(withTitle: "다른 이름으로 저장…", action: #selector(saveAction), keyEquivalent: "s")
         saveItem.keyEquivalentModifierMask = .command
+        menu.addItem(withTitle: "텍스트 추출 (OCR)", action: #selector(ocrAction), keyEquivalent: "")
         menu.addItem(withTitle: "펜으로 표시", action: #selector(penAction), keyEquivalent: "p")
         menu.addItem(.separator())
 
@@ -384,6 +688,15 @@ final class FloatingImageView: NSView {
 
     @objc private func setOpacity(_ sender: NSMenuItem) {
         window?.alphaValue = CGFloat(sender.tag) / 100
+    }
+
+    @objc private func ocrAction() {
+        guard let panel else { return }
+        if OCRService.copyText(from: panel.image) {
+            flashCopyFeedback()
+        } else {
+            NSSound.beep()
+        }
     }
 
     @objc private func collapseAction() {
@@ -546,5 +859,17 @@ extension FloatingImageView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         .copy
+    }
+}
+
+extension FloatingImageView: NSTextFieldDelegate {
+    /// Esc inside the text field discards just the field, not pen mode.
+    func control(_ control: NSControl, textView: NSTextView,
+                 doCommandBy commandSelector: Selector) -> Bool {
+        guard commandSelector == #selector(NSResponder.cancelOperation(_:))
+        else { return false }
+        textField?.stringValue = ""
+        commitTextField()
+        return true
     }
 }
