@@ -54,6 +54,8 @@ struct ShortcutsView: View {
             }
             Section("캡처 화면") {
                 row("픽셀 컬러 복사", "C")
+                row("돋보기 토글", "M")
+                row("비율/크기 선택", "1~6")
                 row("취소", "Esc")
             }
         }

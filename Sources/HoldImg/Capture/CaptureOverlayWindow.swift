@@ -47,6 +47,9 @@ final class CaptureOverlayView: NSView {
     private let coordinator: CaptureCoordinator
     private let mode: CaptureCoordinator.Mode
     private let displayImage: NSImage
+    /// Frozen frame with the dim applied, rendered once — drawing it per
+    /// mouse event is the main cost, so it is precomposited at init.
+    private let backdropImage: NSImage
     private let sampler: PixelSampler?
     private let imageSize: CGSize
 
@@ -58,6 +61,9 @@ final class CaptureOverlayView: NSView {
     private var cursor: CGPoint?
     private var hoveredWindowIndex: Int?
     private var copiedFlashUntil: Date?
+    /// Shared across displays so the toggle applies regardless of which
+    /// overlay currently holds key status.
+    private static var loupeEnabled = true
 
     /// Aspect ratio (w/h) the drag selection is locked to, if any.
     private var aspectLock: CGFloat?
@@ -77,6 +83,29 @@ final class CaptureOverlayView: NSView {
         displayImage = NSImage(cgImage: displayFrame.image,
                                size: displayFrame.screen.frame.size)
         sampler = PixelSampler(cgImage: displayFrame.image)
+
+        // Precomposite the dimmed backdrop at native pixel size.
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                   pixelsWide: displayFrame.image.width,
+                                   pixelsHigh: displayFrame.image.height,
+                                   bitsPerSample: 8,
+                                   samplesPerPixel: 4,
+                                   hasAlpha: true,
+                                   isPlanar: false,
+                                   colorSpaceName: .deviceRGB,
+                                   bytesPerRow: 0,
+                                   bitsPerPixel: 0)!
+        if let ctx = NSGraphicsContext(bitmapImageRep: rep)?.cgContext {
+            let px = CGRect(x: 0, y: 0,
+                            width: displayFrame.image.width,
+                            height: displayFrame.image.height)
+            ctx.draw(displayFrame.image, in: px)
+            ctx.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
+            ctx.fill(px)
+        }
+        rep.size = displayFrame.screen.frame.size
+        backdropImage = NSImage(size: displayFrame.screen.frame.size)
+        backdropImage.addRepresentation(rep)
         let primaryH = ScreenGeometry.primaryScreenHeight
         let origin = displayFrame.screen.frame.origin
         windowRects = windows.map { window in
@@ -127,12 +156,13 @@ final class CaptureOverlayView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        let oldCursor = cursor, oldSelection = selection
         let p = clampToBounds(convert(event.locationInWindow, from: nil))
         cursor = p
         if let start = dragStart {
             selection = constrainedRect(from: start, to: p)
         }
-        needsDisplay = true
+        invalidateDynamic(oldCursor: oldCursor, oldSelection: oldSelection)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -147,6 +177,9 @@ final class CaptureOverlayView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        // Keys should go to the overlay the cursor is actually on.
+        window?.makeKey()
+        let oldCursor = cursor, oldSelection = selection, oldHover = hoveredWindowIndex
         let p = convert(event.locationInWindow, from: nil)
         cursor = p
         if let size = fixedSize {
@@ -155,12 +188,17 @@ final class CaptureOverlayView: NSView {
         if mode == .window {
             hoveredWindowIndex = windowRects.firstIndex { $0.rect.contains(p) }
         }
-        needsDisplay = true
+        invalidateDynamic(oldCursor: oldCursor, oldSelection: oldSelection)
+        if hoveredWindowIndex != oldHover {
+            if let oldHover { setNeedsDisplay(windowRects[oldHover].rect.insetBy(dx: -8, dy: -40)) }
+            if let hoveredWindowIndex { setNeedsDisplay(windowRects[hoveredWindowIndex].rect.insetBy(dx: -8, dy: -40)) }
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
+        let oldCursor = cursor
         cursor = nil
-        needsDisplay = true
+        invalidateDynamic(oldCursor: oldCursor, oldSelection: .zero)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -168,16 +206,18 @@ final class CaptureOverlayView: NSView {
             if let overlayWindow { coordinator.overlayDidCancel(overlayWindow) }
             return
         }
-        if mode == .region,
-           let key = event.charactersIgnoringModifiers?.lowercased() {
-            switch key {
-            case "1": setConstraint(nil, nil, "자유")
-            case "2": setConstraint(1, nil, "1:1")
-            case "3": setConstraint(4.0 / 3.0, nil, "4:3")
-            case "4": setConstraint(16.0 / 9.0, nil, "16:9")
-            case "5": setConstraint(1.6, nil, "16:10")
-            case "6": showSizeInput()
-            case "c":
+        // Match on keyCode, not characters — a non-Latin input source would
+        // turn letter keys into jamo and silently break the shortcuts.
+        if mode == .region {
+            switch event.keyCode {
+            case 18: setConstraint(nil, nil, "자유")
+            case 19: setConstraint(1, nil, "1:1")
+            case 20: setConstraint(4.0 / 3.0, nil, "4:3")
+            case 21: setConstraint(16.0 / 9.0, nil, "16:9")
+            case 23: setConstraint(1.6, nil, "16:10")
+            case 22: showSizeInput()
+            case 46: Self.loupeEnabled.toggle() // M
+            case 8: // C
                 if let cursor, let color = colorAtViewPoint(cursor) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(color.hexString, forType: .string)
@@ -195,16 +235,14 @@ final class CaptureOverlayView: NSView {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        displayImage.draw(in: bounds)
-        NSColor.black.withAlphaComponent(0.45).setFill()
-        bounds.fill()
+        backdropImage.draw(in: bounds)
 
         switch mode {
         case .region: drawRegionMode()
         case .window: drawWindowMode()
         }
         drawHint()
-        if let cursor { drawLoupe(at: cursor) }
+        if Self.loupeEnabled, let cursor { drawLoupe(at: cursor) }
     }
 
     private func drawRegionMode() {
@@ -238,11 +276,11 @@ final class CaptureOverlayView: NSView {
         case .window:
             text = "캡처할 윈도우 클릭 · Esc: 취소"
         case .region where fixedSize != nil:
-            text = "클릭으로 \(constraintLabel) 캡처 · 6: 크기 변경 · 1: 해제 · Esc: 취소"
+            text = "클릭으로 \(constraintLabel) 캡처 · 6: 크기 변경 · 1: 해제 · M: 돋보기 · Esc: 취소"
         case .region where aspectLock != nil:
-            text = "드래그로 영역 선택 · 비율: \(constraintLabel) [1~6 변경] · C: 컬러 복사 · Esc: 취소"
+            text = "드래그로 영역 선택 · 비율: \(constraintLabel) [1~6 변경] · C: 컬러 복사 · M: 돋보기 · Esc: 취소"
         case .region:
-            text = "드래그로 영역 선택 · 비율 [1 자유 · 2 1:1 · 3 4:3 · 4 16:9 · 5 16:10 · 6 직접입력] · C: 컬러 복사 · Esc: 취소"
+            text = "드래그로 영역 선택 · 비율 [1 자유 · 2 1:1 · 3 4:3 · 4 16:9 · 5 16:10 · 6 직접입력] · C: 컬러 복사 · M: 돋보기 · Esc: 취소"
         }
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .medium),
@@ -311,6 +349,22 @@ final class CaptureOverlayView: NSView {
     }
 
     // MARK: - Helpers
+
+    /// Redraw only the regions that can change between mouse events instead
+    /// of repainting the whole display image each time.
+    private func invalidateDynamic(oldCursor: CGPoint?, oldSelection: CGRect) {
+        for sel in [oldSelection, selection] where !sel.isEmpty {
+            setNeedsDisplay(sel.insetBy(dx: -100, dy: -50))
+        }
+        for c in [oldCursor, cursor].compactMap({ $0 }) {
+            setNeedsDisplay(loupeZone(around: c))
+        }
+    }
+
+    /// Rect that contains the loupe and its HEX label wherever it is placed.
+    private func loupeZone(around p: CGPoint) -> CGRect {
+        CGRect(x: p.x - 145, y: p.y - 190, width: 290, height: 340)
+    }
 
     private func setConstraint(_ ratio: CGFloat?, _ size: CGSize?, _ label: String) {
         aspectLock = ratio

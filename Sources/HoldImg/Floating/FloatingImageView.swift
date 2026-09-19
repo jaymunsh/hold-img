@@ -143,8 +143,14 @@ final class FloatingImageView: NSView {
     }
 
     private func appendStroke(at point: CGPoint) {
+        let prev = activeStroke?.points.last.map(denormalize)
         activeStroke?.points.append(normalize(point))
-        needsDisplay = true
+        // Repaint only the new segment instead of the whole image per event.
+        let a = prev ?? point
+        let pad = max((activeStroke?.widthNorm ?? 0) * bounds.height, 0.5) + 2
+        setNeedsDisplay(CGRect(x: min(a.x, point.x) - pad, y: min(a.y, point.y) - pad,
+                               width: abs(point.x - a.x) + pad * 2,
+                               height: abs(point.y - a.y) + pad * 2))
     }
 
     private func endStroke() {

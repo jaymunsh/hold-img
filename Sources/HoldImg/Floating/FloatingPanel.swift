@@ -92,27 +92,29 @@ final class FloatingPanel: NSPanel {
             }
             return
         }
-        if flags == .command, let key = event.charactersIgnoringModifiers?.lowercased() {
-            switch key {
-            case "c":
+        // Match on keyCode, not characters — non-Latin input sources would
+        // turn these into jamo and silently break the shortcuts.
+        if flags == .command {
+            switch event.keyCode {
+            case 8: // C
                 copyImageToPasteboard()
                 view?.flashCopyFeedback()
                 return
-            case "s":
+            case 1: // S
                 ClipboardService.saveWithPanel(image: image)
                 return
-            case "z" where view?.isPenMode == true:
+            case 6 where view?.isPenMode == true: // Z
                 view?.undoStroke()
                 return
             default:
                 break
             }
         }
-        if flags.isEmpty, let key = event.charactersIgnoringModifiers?.lowercased() {
-            switch key {
-            case "t": alwaysOnTop.toggle(); return
-            case "g": clickThrough.toggle(); return
-            case "p":
+        if flags.isEmpty {
+            switch event.keyCode {
+            case 17: alwaysOnTop.toggle(); return // T
+            case 5: clickThrough.toggle(); return // G
+            case 35: // P
                 if view?.isPenMode == true {
                     view?.exitPenMode(bake: false)
                     hoverToolbar.setMode(.normal)
