@@ -18,6 +18,7 @@ final class PanelToolbar: NSVisualEffectView {
     /// SF Symbols + tooltips for the annotation tools, in AnnotationTool order.
     private static let toolButtons: [(symbol: String, tip: String)] = [
         ("pencil.tip", "펜 — 자유곡선"),
+        ("highlighter", "형광펜 — 반투명 강조"),
         ("arrow.up.right", "화살표"),
         ("square", "사각형"),
         ("square.grid.3x3", "모자이크"),
@@ -240,7 +241,7 @@ final class PanelToolbar: NSVisualEffectView {
         case 7: action = .done
         case 8: action = .toggleLock
         case 9: action = .ocr
-        case 200...204: action = .tool(sender.tag - 200)
+        case 200...205: action = .tool(sender.tag - 200)
         default: action = .color(sender.tag - 100)
         }
         onAction?(action)

@@ -18,6 +18,7 @@ final class FloatingImageView: NSView {
     private struct Annotation {
         enum Shape {
             case freehand([CGPoint])
+            case highlight([CGPoint])
             case arrow(from: CGPoint, to: CGPoint)
             case rect(CGRect)
             case mosaic(CGRect)
@@ -29,7 +30,7 @@ final class FloatingImageView: NSView {
     }
 
     enum AnnotationTool: Int {
-        case pen, arrow, rect, mosaic, text
+        case pen, highlighter, arrow, rect, mosaic, text
     }
 
     private var dragStartGlobal: CGPoint = .zero
@@ -93,7 +94,9 @@ final class FloatingImageView: NSView {
             drawAnnotation(ann.shape, color: ann.color, widthNorm: ann.widthNorm)
         }
         if let pts = activeStroke {
-            drawAnnotation(.freehand(pts), color: penColor, widthNorm: strokeWidthNorm)
+            let shape: Annotation.Shape =
+                tool == .highlighter ? .highlight(pts) : .freehand(pts)
+            drawAnnotation(shape, color: penColor, widthNorm: currentWidthNorm)
         }
         if let shape = activeShape {
             drawAnnotation(shape, color: penColor, widthNorm: strokeWidthNorm)
@@ -102,6 +105,11 @@ final class FloatingImageView: NSView {
 
     private var penColor: NSColor { PanelToolbar.penColors[penColorIndex] }
     private var strokeWidthNorm: CGFloat { 3.0 / max(bounds.height, 1) }
+    /// Highlighter band: screen-fixed ~20pt like the pen's 3pt.
+    private var highlightWidthNorm: CGFloat { 20.0 / max(bounds.height, 1) }
+    private var currentWidthNorm: CGFloat {
+        tool == .highlighter ? highlightWidthNorm : strokeWidthNorm
+    }
     private var textFontNorm: CGFloat { 0.05 }
 
     private func drawAnnotation(_ shape: Annotation.Shape,
@@ -113,6 +121,19 @@ final class FloatingImageView: NSView {
             let path = NSBezierPath()
             path.lineWidth = lw
             path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            for (i, p) in points.enumerated() {
+                let v = denormalize(p)
+                i == 0 ? path.move(to: v) : path.line(to: v)
+            }
+            path.stroke()
+        case .highlight(let points):
+            // Marker stroke: translucent, wide, flat ends — reads as a
+            // rectangular band along the drag path.
+            color.withAlphaComponent(0.35).setStroke()
+            let path = NSBezierPath()
+            path.lineWidth = lw
+            path.lineCapStyle = .butt
             path.lineJoinStyle = .round
             for (i, p) in points.enumerated() {
                 let v = denormalize(p)
@@ -308,7 +329,7 @@ final class FloatingImageView: NSView {
             let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
                            width: abs(b.x - a.x), height: abs(b.y - a.y))
             return tool == .rect ? .rect(r) : .mosaic(r)
-        case .pen, .text:
+        case .pen, .highlighter, .text:
             return .freehand([a, b])
         }
     }
@@ -316,7 +337,7 @@ final class FloatingImageView: NSView {
     /// View-space bounds of a shape, used for partial invalidation.
     private func shapeBounds(_ shape: Annotation.Shape) -> CGRect {
         switch shape {
-        case .freehand(let points):
+        case .freehand(let points), .highlight(let points):
             guard let first = points.first else { return .null }
             var r = CGRect(origin: denormalize(first), size: .zero)
             for p in points.dropFirst() {
@@ -348,7 +369,7 @@ final class FloatingImageView: NSView {
         activeStroke?.append(normalize(point))
         // Repaint only the new segment instead of the whole image per event.
         let a = prev ?? point
-        let pad = max(strokeWidthNorm * bounds.height, 0.5) + 2
+        let pad = max(currentWidthNorm * bounds.height, 0.5) + 2
         setNeedsDisplay(CGRect(x: min(a.x, point.x) - pad, y: min(a.y, point.y) - pad,
                                width: abs(point.x - a.x) + pad * 2,
                                height: abs(point.y - a.y) + pad * 2))
@@ -360,8 +381,10 @@ final class FloatingImageView: NSView {
             // A single tap: nudge a second point so a round dot is drawn.
             pts.append(CGPoint(x: pts[0].x + 0.002, y: pts[0].y))
         }
-        annotations.append(Annotation(shape: .freehand(pts), color: penColor,
-                                      widthNorm: strokeWidthNorm))
+        let shape: Annotation.Shape =
+            tool == .highlighter ? .highlight(pts) : .freehand(pts)
+        annotations.append(Annotation(shape: shape, color: penColor,
+                                      widthNorm: currentWidthNorm))
         activeStroke = nil
         needsDisplay = true
     }
@@ -439,6 +462,18 @@ final class FloatingImageView: NSView {
                     i == 0 ? ctx.move(to: v) : ctx.addLine(to: v)
                 }
                 ctx.strokePath()
+            case .highlight(let points):
+                ctx.saveGState()
+                ctx.setStrokeColor(ann.color.withAlphaComponent(0.35).cgColor)
+                ctx.setLineWidth(lw)
+                ctx.setLineCap(.butt)
+                for (i, raw) in points.enumerated() {
+                    let p = clampNorm(raw)
+                    let v = CGPoint(x: p.x * pxW, y: p.y * pxH)
+                    i == 0 ? ctx.move(to: v) : ctx.addLine(to: v)
+                }
+                ctx.strokePath()
+                ctx.restoreGState()
             case .arrow(let a, let b):
                 ctx.setStrokeColor(ann.color.cgColor)
                 ctx.setLineWidth(lw)
@@ -528,7 +563,7 @@ final class FloatingImageView: NSView {
         if isPenMode {
             let p = convert(event.locationInWindow, from: nil)
             switch tool {
-            case .pen:
+            case .pen, .highlighter:
                 beginStroke(at: p)
             case .arrow, .rect, .mosaic:
                 dragAnchor = p
@@ -552,7 +587,7 @@ final class FloatingImageView: NSView {
         if isPenMode {
             let p = convert(event.locationInWindow, from: nil)
             switch tool {
-            case .pen:
+            case .pen, .highlighter:
                 appendStroke(at: p)
             case .arrow, .rect, .mosaic:
                 guard let anchor = dragAnchor else { return }
