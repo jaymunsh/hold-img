@@ -11,10 +11,37 @@ make run     # 빌드 후 앱 실행
 ```
 
 Xcode 없이 SwiftPM + `Scripts/build-app.sh`로 `.app` 번들을 만듭니다.
+
+### 서명
+
 `~/.local/share/holdimg-dev/holdimg.keychain-db`에 "HoldImg Local Dev"
 자체 서명 인증서가 있으면 그걸로 서명합니다 — 재빌드해도 서명 ID가
 유지되어 화면 기록 권한이 리셋되지 않습니다. 없으면 ad-hoc 서명으로
 폴백되며, 이 경우 매 빌드마다 권한을 다시 허용해야 합니다.
+
+키체인 암호는 repo에 포함하지 않습니다. 스크립트는
+`HOLDIMG_KEYCHAIN_PASSWORD` 환경변수 또는
+`~/.local/share/holdimg-dev/keychain-password`(chmod 600) 파일에서 읽습니다.
+
+<details><summary>로컬 개발용 인증서 만드는 법</summary>
+
+```bash
+mkdir -p ~/.local/share/holdimg-dev && cd ~/.local/share/holdimg-dev
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
+  -days 3650 -nodes -subj "/CN=HoldImg Local Dev" \
+  -addext "extendedKeyUsage=codeSigning" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,digitalSignature"
+openssl pkcs12 -export -out cert.p12 -inkey key.pem -in cert.pem -password pass:<암호>
+security create-keychain -p <암호> holdimg.keychain-db
+security import cert.p12 -k holdimg.keychain-db -P <암호> -T /usr/bin/codesign
+security import cert.pem -k holdimg.keychain-db -T /usr/bin/codesign
+security set-key-partition-list -S apple-tool:,apple: -s -k <암호> holdimg.keychain-db
+printf '%s' '<암호>' > keychain-password && chmod 600 keychain-password
+```
+
+배포용 릴리즈는 Apple Developer ID 인증서 + notarization을 사용하세요.
+</details>
 
 ## 최초 실행 — 화면 기록 권한
 

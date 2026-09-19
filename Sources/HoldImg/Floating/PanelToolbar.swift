@@ -19,6 +19,11 @@ final class PanelToolbar: NSVisualEffectView {
     private var penModeActive: Bool { mode == .pen }
     private var colorIndex = 0
     private let stack = NSStackView()
+    private var tracking: NSTrackingArea?
+
+    /// Semi-transparent while idle so it doesn't obscure the image;
+    /// full opacity while the pointer is over the toolbar itself.
+    private static let restingAlpha: CGFloat = 0.8
 
     override init(frame frameRect: NSRect = .zero) {
         super.init(frame: frameRect)
@@ -60,7 +65,33 @@ final class PanelToolbar: NSVisualEffectView {
         isHidden = false
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.15
+            animator().alphaValue = Self.restingAlpha
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        tracking = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(tracking!)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
             animator().alphaValue = 1
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            animator().alphaValue = Self.restingAlpha
         }
     }
 
