@@ -270,35 +270,119 @@ final class CaptureOverlayView: NSView {
         }
     }
 
+    /// One piece of the hint bar: a keycap chip (optionally highlighted as
+    /// the active choice), plain label text, a thin divider, or extra space.
+    private enum HintItem {
+        case key(String, active: Bool = false)
+        case text(String)
+        case divider
+        case gap(CGFloat)
+    }
+
     private func drawHint() {
-        let text: String
-        switch mode {
-        case .window:
-            text = "캡처할 윈도우 클릭 · Esc: 취소"
-        case .region where fixedSize != nil:
-            text = "클릭으로 \(constraintLabel) 캡처 · 6: 크기 변경 · 1: 해제 · M: 돋보기 · Esc: 취소"
-        case .region where aspectLock != nil:
-            text = "드래그로 영역 선택 · 비율: \(constraintLabel) [1~6 변경] · C: 컬러 복사 · M: 돋보기 · Esc: 취소"
-        case .region:
-            text = "드래그로 영역 선택 · 비율 [1 자유 · 2 1:1 · 3 4:3 · 4 16:9 · 5 16:10 · 6 직접입력] · C: 컬러 복사 · M: 돋보기 · Esc: 취소"
-        }
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+        let keyAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: NSColor.white,
+        ]
+        let labelAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor.white.withAlphaComponent(0.85),
         ]
-        let str = NSAttributedString(string: text, attributes: attrs)
-        let size = str.size()
-        let point = CGPoint(x: (bounds.width - size.width) / 2, y: bounds.height - 40)
-        let bg = CGRect(x: point.x - 10, y: point.y - 6,
-                        width: size.width + 20, height: size.height + 12)
-        NSColor.black.withAlphaComponent(0.55).setFill()
-        NSBezierPath(roundedRect: bg, xRadius: 8, yRadius: 8).fill()
-        str.draw(at: point)
+        let rowH: CGFloat = 18, itemGap: CGFloat = 6, rowGap: CGFloat = 8
+        let padX: CGFloat = 14, padY: CGFloat = 10
+
+        func itemWidth(_ item: HintItem) -> CGFloat {
+            switch item {
+            case .key(let s, _):
+                return max(22, NSAttributedString(string: s, attributes: keyAttrs).size().width + 14)
+            case .text(let s):
+                return NSAttributedString(string: s, attributes: labelAttrs).size().width
+            case .divider: return 11
+            case .gap(let w): return w
+            }
+        }
+
+        // MARK: Compose rows
+        let actionRow: [HintItem]
+        var ratioRow: [HintItem]?
+        switch mode {
+        case .window:
+            actionRow = [.text("클릭 — 캡처할 윈도우 선택"), .divider,
+                         .key("Esc"), .text("취소")]
+        case .region:
+            if fixedSize != nil {
+                actionRow = [.text("클릭으로 \(constraintLabel) 캡처"), .divider,
+                             .key("6"), .text("크기 변경"), .gap(8),
+                             .key("1"), .text("해제"), .gap(8),
+                             .key("M"), .text("돋보기"), .gap(8),
+                             .key("Esc"), .text("취소")]
+            } else {
+                actionRow = [.text("드래그로 영역 선택"), .divider,
+                             .key("C"), .text("컬러 복사"), .gap(8),
+                             .key("M"), .text("돋보기"), .gap(8),
+                             .key("Esc"), .text("취소")]
+            }
+            let ratios: [(String, Bool)] = [
+                ("1 자유",   aspectLock == nil && fixedSize == nil),
+                ("2 1:1",    aspectLock == 1),
+                ("3 4:3",    aspectLock == 4.0 / 3.0),
+                ("4 16:9",   aspectLock == 16.0 / 9.0),
+                ("5 16:10",  aspectLock == 1.6),
+                ("6 직접입력", fixedSize != nil),
+            ]
+            ratioRow = [.text("비율"), .gap(4)]
+                + ratios.map { HintItem.key($0.0, active: $0.1) }
+        }
+
+        let rows = [actionRow, ratioRow].compactMap { $0 }
+        let rowWidths = rows.map { row in
+            row.map(itemWidth).reduce(0, +) + CGFloat(row.count - 1) * itemGap
+        }
+        let cardW = (rowWidths.max() ?? 0) + padX * 2
+        let cardH = padY * 2 + CGFloat(rows.count) * rowH + CGFloat(rows.count - 1) * rowGap
+        let card = CGRect(x: (bounds.width - cardW) / 2,
+                          y: bounds.height - cardH - 22,
+                          width: cardW, height: cardH)
+
+        NSColor.black.withAlphaComponent(0.6).setFill()
+        NSBezierPath(roundedRect: card, xRadius: 10, yRadius: 10).fill()
+        NSColor.white.withAlphaComponent(0.12).setStroke()
+        NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5),
+                     xRadius: 9.5, yRadius: 9.5).stroke()
+
+        // MARK: Draw rows
+        var y = card.maxY - padY - rowH
+        for (ri, row) in rows.enumerated() {
+            var x = card.midX - rowWidths[ri] / 2
+            for item in row {
+                let w = itemWidth(item)
+                switch item {
+                case .key(let s, let active):
+                    let chip = CGRect(x: x, y: y + 1, width: w, height: rowH - 2)
+                    (active ? NSColor.controlAccentColor
+                            : NSColor.white.withAlphaComponent(0.14)).setFill()
+                    NSBezierPath(roundedRect: chip, xRadius: 5, yRadius: 5).fill()
+                    let str = NSAttributedString(string: s, attributes: keyAttrs)
+                    str.draw(at: CGPoint(x: x + (w - str.size().width) / 2,
+                                         y: y + (rowH - str.size().height) / 2))
+                case .text(let s):
+                    let str = NSAttributedString(string: s, attributes: labelAttrs)
+                    str.draw(at: CGPoint(x: x, y: y + (rowH - str.size().height) / 2))
+                case .divider:
+                    NSColor.white.withAlphaComponent(0.25).setFill()
+                    CGRect(x: x + 5, y: y + 3, width: 1, height: rowH - 6).fill()
+                case .gap:
+                    break
+                }
+                x += w + itemGap
+            }
+            y -= rowH + rowGap
+        }
     }
 
     private func drawLabel(_ text: String, near point: CGPoint) {
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor.white,
         ]
         let str = NSAttributedString(string: text, attributes: attrs)
