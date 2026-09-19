@@ -39,6 +39,7 @@ struct ShortcutsView: View {
                 row("윈도우 캡처", shortcutText(.captureWindow))
                 row("마지막 영역 재캡처", shortcutText(.recaptureRegion))
                 row("클립보드 이미지 붙여넣기", shortcutText(.pasteFloat))
+                row("모든 창 숨기기/보이기", shortcutText(.toggleHidden))
             }
             Section("플로팅 창 (포커스된 상태)") {
                 row("클릭 — 이미지 복사", "")

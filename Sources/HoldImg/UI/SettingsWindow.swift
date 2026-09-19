@@ -61,6 +61,9 @@ struct SettingsView: View {
                 LabeledContent("클립보드 붙여넣기") {
                     KeyboardShortcuts.Recorder(for: .pasteFloat)
                 }
+                LabeledContent("모든 창 숨기기/보이기") {
+                    KeyboardShortcuts.Recorder(for: .toggleHidden)
+                }
             }
             Section("앱") {
                 Toggle("로그인 시 자동 실행", isOn: $settings.launchAtLogin)

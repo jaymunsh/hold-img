@@ -7,6 +7,9 @@ final class FloatingWindowManager {
     private(set) var panels: [FloatingPanel] = []
     private var cascadeStep = 0
 
+    /// True while all panels are parked off-screen (GrabIt-style hide all).
+    private(set) var allHidden = false
+
     /// Shows a floating panel occupying `frameInScreen` (global AppKit coords).
     @discardableResult
     func show(image: NSImage, frameInScreen rect: CGRect) -> FloatingPanel {
@@ -26,7 +29,18 @@ final class FloatingWindowManager {
         return present(panel)
     }
 
+    /// Parks every panel off-screen, or brings them all back.
+    func toggleHidden() {
+        allHidden.toggle()
+        if allHidden {
+            panels.forEach { $0.orderOut(nil) }
+        } else {
+            panels.forEach { $0.orderFrontRegardless() }
+        }
+    }
+
     func closeAll() {
+        allHidden = false
         panels.forEach { $0.close() }
         panels.removeAll()
     }
@@ -36,6 +50,9 @@ final class FloatingWindowManager {
     }
 
     private func present(_ panel: FloatingPanel) -> FloatingPanel {
+        // A freshly presented panel resets the parked state — it would be
+        // confusing for a new capture to land on a hidden desktop.
+        allHidden = false
         panel.orderFrontRegardless()
         panels.append(panel)
         NotificationCenter.default.addObserver(

@@ -5,6 +5,7 @@ import KeyboardShortcuts
 final class StatusItemController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var recentMenuItem: NSMenuItem?
+    private var hideMenuItem: NSMenuItem?
 
     override init() {
         super.init()
@@ -25,6 +26,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         recentMenuItem = recent
         menu.addItem(.separator())
 
+        let hide = action("모든 창 숨기기", #selector(toggleHidden))
+        hide.setShortcut(for: .toggleHidden)
+        menu.addItem(hide)
+        hideMenuItem = hide
         menu.addItem(action("모든 창 닫기", #selector(closeAll)))
         menu.addItem(action("모든 창 클릭-스루 해제", #selector(disableClickThrough)))
         menu.addItem(.separator())
@@ -80,6 +85,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         rebuildRecentSubmenu()
+        hideMenuItem?.title = FloatingWindowManager.shared.allHidden
+            ? "모든 창 보이기" : "모든 창 숨기기"
     }
 
     private func rebuildRecentSubmenu() {
@@ -170,6 +177,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func clearHistory() {
         CaptureHistoryStore.shared.clear()
+    }
+
+    @objc private func toggleHidden() {
+        FloatingWindowManager.shared.toggleHidden()
     }
 
     @objc private func closeAll() {

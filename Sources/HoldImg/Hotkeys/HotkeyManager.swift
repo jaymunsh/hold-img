@@ -10,6 +10,8 @@ extension KeyboardShortcuts.Name {
                                       default: .init(.r, modifiers: [.control, .option]))
     static let pasteFloat = Self("pasteFloat",
                                  default: .init(.v, modifiers: [.control, .option]))
+    static let toggleHidden = Self("toggleHidden",
+                                   default: .init(.h, modifiers: [.control, .option]))
 }
 
 enum HotkeyManager {
@@ -26,6 +28,9 @@ enum HotkeyManager {
         }
         KeyboardShortcuts.onKeyDown(for: .pasteFloat) {
             Task { @MainActor in pasteFromClipboard() }
+        }
+        KeyboardShortcuts.onKeyDown(for: .toggleHidden) {
+            Task { @MainActor in FloatingWindowManager.shared.toggleHidden() }
         }
     }
 
