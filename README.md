@@ -1,7 +1,28 @@
-# HoldImg
+<p align="center">
+  <img src="docs/app-icon.png" width="128" alt="HoldImg 아이콘">
+</p>
 
-GrabIt/Snipaste 스타일의 macOS 플로팅 스크린샷 유틸리티.
+<h1 align="center">HoldImg</h1>
+
+<p align="center">
+GrabIt/Snipaste 스타일의 macOS 플로팅 스크린샷 유틸리티.<br>
 화면 영역을 캡처하면 모든 윈도우 위에 떠 있는 이미지 창이 즉시 표시됩니다.
+</p>
+
+## 설치
+
+Releases에서 `HoldImg.app.zip`을 받아 압축을 풀고 `/Applications`에 넣으세요.
+
+> **처음 실행할 때**: Apple Developer Program 등록 없이 배포되는 앱이라
+> Gatekeeper가 "확인되지 않은 개발자" 경고를 띄울 수 있습니다.
+> 앱을 **우클릭 → 열기**로 한 번 실행하면 통과되며, 또는 터미널에서:
+>
+> ```bash
+> xattr -d com.apple.quarantine /Applications/HoldImg.app
+> ```
+>
+> 첫 캡처 시에는 시스템이 요청하는 **화면 기록 권한**을 허용해야 합니다.
+> 이후에는 개발자 등록 없이도 그대로 사용 가능합니다.
 
 ## 빌드 & 실행
 

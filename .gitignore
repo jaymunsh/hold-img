@@ -1,5 +1,6 @@
 .build/
 build/
+.devin/
 .DS_Store
 *.xcworkspace
 xcuserdata/
