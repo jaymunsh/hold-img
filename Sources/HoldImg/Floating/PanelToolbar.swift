@@ -7,6 +7,7 @@ final class PanelToolbar: NSVisualEffectView {
     enum Action {
         case pen, copy, save, close
         case color(Int), undo, clear, done
+        case toggleLock
     }
 
     enum Mode { case normal, pen }
@@ -18,6 +19,7 @@ final class PanelToolbar: NSVisualEffectView {
     private(set) var mode: Mode = .normal
     private var penModeActive: Bool { mode == .pen }
     private var colorIndex = 0
+    private var aspectLocked = true
     private let stack = NSStackView()
     private var tracking: NSTrackingArea?
 
@@ -58,6 +60,11 @@ final class PanelToolbar: NSVisualEffectView {
 
     func setColorIndex(_ index: Int) {
         colorIndex = index
+        rebuild()
+    }
+
+    func setLocked(_ locked: Bool) {
+        aspectLocked = locked
         rebuild()
     }
 
@@ -121,7 +128,10 @@ final class PanelToolbar: NSVisualEffectView {
             addButton(symbol: "pencil.tip", tag: 1, tip: "펜으로 표시 (P)")
             addButton(symbol: "doc.on.doc", tag: 2, tip: "복사 (⌘C)")
             addButton(symbol: "square.and.arrow.down", tag: 3, tip: "다른 이름으로 저장 (⌘S)")
-            addButton(symbol: "xmark", tag: 4, tip: "닫기 (Esc)")
+            addButton(symbol: aspectLocked ? "lock.fill" : "lock.open.fill",
+                      tag: 8, tip: "비율 잠금 — 해제 시 자유 리사이즈",
+                      tint: aspectLocked ? nil : .controlAccentColor)
+            addButton(symbol: "xmark", tag: 4, tip: "닫기 (⌘W/Esc)")
         case .pen:
             for (i, color) in Self.penColors.enumerated() {
                 addColorButton(index: i, color: color)
@@ -142,12 +152,12 @@ final class PanelToolbar: NSVisualEffectView {
         }
     }
 
-    private func addButton(symbol: String, tag: Int, tip: String) {
+    private func addButton(symbol: String, tag: Int, tip: String, tint: NSColor? = nil) {
         let button = NSButton()
         button.isBordered = false
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
         button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = .labelColor
+        button.contentTintColor = tint ?? .labelColor
         button.target = self
         button.action = #selector(buttonTapped(_:))
         button.tag = tag
@@ -199,6 +209,7 @@ final class PanelToolbar: NSVisualEffectView {
         case 5: action = .undo
         case 6: action = .clear
         case 7: action = .done
+        case 8: action = .toggleLock
         default: action = .color(sender.tag - 100)
         }
         onAction?(action)

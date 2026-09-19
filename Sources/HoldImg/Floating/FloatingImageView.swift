@@ -502,15 +502,18 @@ final class FloatingImageView: NSView {
         case .none:        return
         }
 
+        let locked = panel?.aspectLocked ?? true
         var newW = abs(mouseGlobal.x - anchor.x)
         var newH = abs(mouseGlobal.y - anchor.y)
-        if newW / max(newH, 1) > aspect {
-            newW = newH * aspect
-        } else {
-            newH = newW / aspect
+        if locked {
+            if newW / max(newH, 1) > aspect {
+                newW = newH * aspect
+            } else {
+                newH = newW / aspect
+            }
         }
         newW = min(max(newW, minDimension), maxDimension)
-        newH = newW / aspect
+        newH = locked ? newW / aspect : min(max(newH, minDimension), maxDimension)
         guard newH >= minDimension else { return }
 
         let origin = CGPoint(

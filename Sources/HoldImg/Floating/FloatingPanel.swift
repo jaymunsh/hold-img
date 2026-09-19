@@ -5,6 +5,9 @@ final class FloatingPanel: NSPanel {
     private(set) var image: NSImage
     let hoverToolbar = PanelToolbar()
 
+    /// Corner-drag resize keeps the aspect ratio while locked (default).
+    var aspectLocked = true
+
     var clickThrough: Bool {
         get { ignoresMouseEvents }
         set { ignoresMouseEvents = newValue }
@@ -62,6 +65,9 @@ final class FloatingPanel: NSPanel {
             ClipboardService.saveWithPanel(image: image)
         case .close:
             close()
+        case .toggleLock:
+            aspectLocked.toggle()
+            hoverToolbar.setLocked(aspectLocked)
         case .color(let index):
             view.selectPenColor(index)
             hoverToolbar.setColorIndex(index)
