@@ -22,7 +22,7 @@ final class FloatingPanel: NSPanel {
         self.image = image
         super.init(
             contentRect: frameInScreen,
-            styleMask: [.borderless, .nonactivatingPanel, .resizable],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -35,7 +35,6 @@ final class FloatingPanel: NSPanel {
         minSize = NSSize(width: 32, height: 32)
         contentView = FloatingImageView(image: image)
         attachHoverToolbar()
-        delegate = self
     }
 
     override var canBecomeKey: Bool { true }
@@ -143,6 +142,10 @@ final class FloatingPanel: NSPanel {
             case 3 where flags.isEmpty && view?.isPenMode != true: // F
                 flipHorizontal()
                 return
+            case 37 where flags.isEmpty && view?.isPenMode != true: // L
+                aspectLocked.toggle()
+                hoverToolbar.setLocked(aspectLocked)
+                return
             case 123: nudge(dx: -step, dy: 0); return // ←
             case 124: nudge(dx: step, dy: 0); return // →
             case 125: nudge(dx: 0, dy: -step); return // ↓
@@ -218,28 +221,5 @@ final class FloatingPanel: NSPanel {
 
     func copyImageToPasteboard() {
         ClipboardService.copy(image)
-    }
-}
-
-extension FloatingPanel: NSWindowDelegate {
-    /// The .resizable style mask lets AppKit edge-resize the window,
-    /// bypassing the view's corner-drag aspect logic — constrain native
-    /// resizes to the current ratio while locked. (aspectRatio would do
-    /// this too, but setting it to .zero crashed inside
-    /// _resizeWithEvent on this OS version.)
-    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        guard aspectLocked else { return frameSize }
-        let aspect = frame.width / frame.height
-        guard aspect > 0 else { return frameSize }
-        // Let the dragged axis lead; grow the other axis to preserve ratio.
-        let dw = abs(frameSize.width - frame.width)
-        let dh = abs(frameSize.height - frame.height)
-        var size = frameSize
-        if dw >= dh * aspect {
-            size.height = size.width / aspect
-        } else {
-            size.width = size.height * aspect
-        }
-        return size
     }
 }

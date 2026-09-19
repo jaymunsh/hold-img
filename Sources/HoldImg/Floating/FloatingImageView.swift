@@ -9,8 +9,9 @@ final class FloatingImageView: NSView {
         didSet { needsDisplay = true }
     }
 
-    private enum Corner {
-        case none, topLeft, topRight, bottomLeft, bottomRight
+    private enum ResizeZone {
+        case none, topLeft, topRight, bottomLeft, bottomRight,
+             left, right, top, bottom
     }
 
     /// A drawn annotation in normalized (0...1) image coordinates so it
@@ -35,7 +36,7 @@ final class FloatingImageView: NSView {
 
     private var dragStartGlobal: CGPoint = .zero
     private var dragStartFrame: CGRect = .zero
-    private var dragCorner: Corner = .none
+    private var dragZone: ResizeZone = .none
     private var didMove = false
 
     /// Right-button drag state: down arms, drag starts a file drag,
@@ -579,7 +580,7 @@ final class FloatingImageView: NSView {
         }
         dragStartGlobal = NSEvent.mouseLocation
         dragStartFrame = window?.frame ?? .zero
-        dragCorner = corner(at: convert(event.locationInWindow, from: nil))
+        dragZone = resizeZone(at: convert(event.locationInWindow, from: nil))
         didMove = false
     }
 
@@ -606,7 +607,7 @@ final class FloatingImageView: NSView {
         let dx = mouse.x - dragStartGlobal.x
         let dy = mouse.y - dragStartGlobal.y
         if abs(dx) + abs(dy) > 2 { didMove = true }
-        if dragCorner == .none {
+        if dragZone == .none {
             let proposed = CGRect(x: dragStartFrame.minX + dx,
                                   y: dragStartFrame.minY + dy,
                                   width: dragStartFrame.width,
@@ -629,11 +630,11 @@ final class FloatingImageView: NSView {
             dragAnchor = nil
             return
         }
-        if !didMove, dragCorner == .none {
+        if !didMove, dragZone == .none {
             panel?.copyImageToPasteboard()
             flashCopyFeedback()
         }
-        dragCorner = .none
+        dragZone = .none
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -878,7 +879,10 @@ final class FloatingImageView: NSView {
 
     private var panel: FloatingPanel? { window as? FloatingPanel }
 
-    private func corner(at point: CGPoint) -> Corner {
+    /// Corners use the wider grab zone; edges get a thin band between them.
+    /// All resizes run through this view — the panel intentionally omits
+    /// .resizable so AppKit's native edge-resize can't fight our aspect lock.
+    private func resizeZone(at point: CGPoint) -> ResizeZone {
         let w = bounds.width, h = bounds.height
         let nearLeft = point.x < cornerSize, nearRight = point.x > w - cornerSize
         let nearBottom = point.y < cornerSize, nearTop = point.y > h - cornerSize
@@ -886,44 +890,72 @@ final class FloatingImageView: NSView {
         if nearRight && nearTop { return .topRight }
         if nearLeft && nearBottom { return .bottomLeft }
         if nearRight && nearBottom { return .bottomRight }
+        let e: CGFloat = 6
+        if point.x < e { return .left }
+        if point.x > w - e { return .right }
+        if point.y < e { return .bottom }
+        if point.y > h - e { return .top }
         return .none
     }
 
-    /// Aspect-preserving resize: the corner opposite to the dragged one stays fixed.
+    /// Aspect-preserving resize: the corner opposite to the dragged one stays
+    /// fixed. Edge drags move that edge while the other axis follows the ratio
+    /// (locked) or stays put (unlocked).
     private func resize(to mouseGlobal: CGPoint) {
         guard let window else { return }
         let f = dragStartFrame
         let aspect = f.width / f.height
-
-        let anchor: CGPoint
-        switch dragCorner {
-        case .bottomRight: anchor = f.origin
-        case .bottomLeft:  anchor = CGPoint(x: f.maxX, y: f.minY)
-        case .topRight:    anchor = CGPoint(x: f.minX, y: f.maxY)
-        case .topLeft:     anchor = CGPoint(x: f.maxX, y: f.maxY)
-        case .none:        return
-        }
-
         let locked = panel?.aspectLocked ?? true
-        var newW = abs(mouseGlobal.x - anchor.x)
-        var newH = abs(mouseGlobal.y - anchor.y)
-        if locked {
-            if newW / max(newH, 1) > aspect {
-                newW = newH * aspect
-            } else {
-                newH = newW / aspect
-            }
-        }
-        newW = min(max(newW, minDimension), maxDimension)
-        newH = locked ? newW / aspect : min(max(newH, minDimension), maxDimension)
-        guard newH >= minDimension else { return }
+        var frame = f
 
-        let origin = CGPoint(
-            x: mouseGlobal.x >= anchor.x ? anchor.x : anchor.x - newW,
-            y: mouseGlobal.y >= anchor.y ? anchor.y : anchor.y - newH
-        )
-        window.setFrame(CGRect(origin: origin, size: CGSize(width: newW, height: newH)),
-                        display: true)
+        switch dragZone {
+        case .none:
+            return
+        case .left, .right:
+            var newW = dragZone == .right ? mouseGlobal.x - f.minX
+                                          : f.maxX - mouseGlobal.x
+            newW = min(max(newW, minDimension), maxDimension)
+            let newH = locked ? newW / aspect : f.height
+            frame.size = CGSize(width: newW, height: newH)
+            frame.origin.x = dragZone == .right ? f.minX : f.maxX - newW
+            frame.origin.y = locked ? f.midY - newH / 2 : f.minY
+        case .top, .bottom:
+            var newH = dragZone == .top ? mouseGlobal.y - f.minY
+                                        : f.maxY - mouseGlobal.y
+            newH = min(max(newH, minDimension), maxDimension)
+            let newW = locked ? newH * aspect : f.width
+            frame.size = CGSize(width: newW, height: newH)
+            frame.origin.y = dragZone == .top ? f.minY : f.maxY - newH
+            frame.origin.x = locked ? f.midX - newW / 2 : f.minX
+        default:
+            // Anchor = the diagonally opposite corner, in AppKit coords
+            // (view y is bottom-up: .bottom* zones sit at minY).
+            let anchor: CGPoint
+            switch dragZone {
+            case .bottomRight: anchor = CGPoint(x: f.minX, y: f.maxY)
+            case .bottomLeft:  anchor = CGPoint(x: f.maxX, y: f.maxY)
+            case .topRight:    anchor = f.origin
+            default:           anchor = CGPoint(x: f.maxX, y: f.minY)
+            }
+            var newW = abs(mouseGlobal.x - anchor.x)
+            var newH = abs(mouseGlobal.y - anchor.y)
+            if locked {
+                if newW / max(newH, 1) > aspect {
+                    newW = newH * aspect
+                } else {
+                    newH = newW / aspect
+                }
+            }
+            newW = min(max(newW, minDimension), maxDimension)
+            newH = locked ? newW / aspect : min(max(newH, minDimension), maxDimension)
+            guard newH >= minDimension else { return }
+            frame.size = CGSize(width: newW, height: newH)
+            frame.origin = CGPoint(
+                x: mouseGlobal.x >= anchor.x ? anchor.x : anchor.x - newW,
+                y: mouseGlobal.y >= anchor.y ? anchor.y : anchor.y - newH
+            )
+        }
+        window.setFrame(frame, display: true)
         showSizeBadge()
     }
 
