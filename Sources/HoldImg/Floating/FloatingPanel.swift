@@ -103,6 +103,9 @@ final class FloatingPanel: NSPanel {
             case 1: // S
                 ClipboardService.saveWithPanel(image: image)
                 return
+            case 13: // W
+                close()
+                return
             case 6 where view?.isPenMode == true: // Z
                 view?.undoStroke()
                 return

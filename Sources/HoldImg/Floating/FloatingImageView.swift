@@ -25,6 +25,15 @@ final class FloatingImageView: NSView {
     private var dragCorner: Corner = .none
     private var didMove = false
 
+    /// Right-button drag state: down arms, drag starts a file drag,
+    /// up without movement opens the context menu.
+    private var rightDownPoint: CGPoint?
+    private var rightDragActive = false
+
+    /// Frame saved when the panel is collapsed to thumbnail by double-click.
+    private var expandedFrame: CGRect?
+    private var dragFileURL: URL?
+
     private(set) var isPenMode = false
     private var strokes: [Stroke] = []
     private var activeStroke: Stroke?
@@ -77,6 +86,9 @@ final class FloatingImageView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         panel?.hoverToolbar.show()
+        // Nonactivating panel: this only takes key status inside this app,
+        // so hovered panels can receive ⌘W/keys without stealing app focus.
+        window?.makeKey()
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -205,7 +217,7 @@ final class FloatingImageView: NSView {
             return
         }
         if event.clickCount == 2 {
-            window?.close()
+            toggleCollapsed()
             return
         }
         dragStartGlobal = NSEvent.mouseLocation
@@ -225,8 +237,11 @@ final class FloatingImageView: NSView {
         let dy = mouse.y - dragStartGlobal.y
         if abs(dx) + abs(dy) > 2 { didMove = true }
         if dragCorner == .none {
-            window.setFrameOrigin(CGPoint(x: dragStartFrame.minX + dx,
-                                          y: dragStartFrame.minY + dy))
+            let proposed = CGRect(x: dragStartFrame.minX + dx,
+                                  y: dragStartFrame.minY + dy,
+                                  width: dragStartFrame.width,
+                                  height: dragStartFrame.height)
+            window.setFrameOrigin(snappedOrigin(for: proposed))
         } else {
             resize(to: mouse)
         }
@@ -256,6 +271,62 @@ final class FloatingImageView: NSView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        rightDownPoint = convert(event.locationInWindow, from: nil)
+        rightDragActive = false
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard !rightDragActive, let start = rightDownPoint else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        guard abs(p.x - start.x) + abs(p.y - start.y) > 4 else { return }
+        rightDragActive = true
+        beginFileDrag(with: event)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        defer { rightDownPoint = nil }
+        guard !rightDragActive else {
+            rightDragActive = false
+            return
+        }
+        showContextMenu(with: event)
+    }
+
+    /// GrabIt-style: drag the panel with the right button to drop the image
+    /// into Finder or any app accepting files/images.
+    private func beginFileDrag(with event: NSEvent) {
+        guard let panel else { return }
+        let item = NSPasteboardItem()
+        if let tiff = panel.image.tiffRepresentation {
+            item.setData(tiff, forType: .tiff)
+        }
+        if let url = fileURLForDrag() {
+            item.setString(url.absoluteString, forType: .fileURL)
+        }
+        let draggingItem = NSDraggingItem(pasteboardWriter: item)
+        draggingItem.setDraggingFrame(bounds, contents: panel.image)
+        beginDraggingSession(with: [draggingItem], event: event, source: self)
+    }
+
+    /// PNG written to a temp file so the drag offers a real file URL.
+    private func fileURLForDrag() -> URL? {
+        if let dragFileURL { return dragFileURL }
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:])
+        else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("holdimg-\(UUID().uuidString).png")
+        do {
+            try png.write(to: url)
+            dragFileURL = url
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    private func showContextMenu(with event: NSEvent) {
         guard let panel else { return }
         let menu = NSMenu()
         let copyItem = menu.addItem(withTitle: "복사", action: #selector(copyAction), keyEquivalent: "c")
@@ -284,7 +355,9 @@ final class FloatingImageView: NSView {
         menu.setSubmenu(opacityMenu, for: opacityItem)
         menu.addItem(.separator())
 
-        menu.addItem(withTitle: "닫기", action: #selector(closeAction), keyEquivalent: "\u{1b}")
+        menu.addItem(withTitle: "축소/복원", action: #selector(collapseAction), keyEquivalent: "")
+        let closeItem = menu.addItem(withTitle: "닫기", action: #selector(closeAction), keyEquivalent: "w")
+        closeItem.keyEquivalentModifierMask = .command
         menu.items.forEach { $0.target = self }
         menu.popUp(positioning: nil, at: convert(event.locationInWindow, from: nil), in: self)
     }
@@ -311,6 +384,10 @@ final class FloatingImageView: NSView {
 
     @objc private func setOpacity(_ sender: NSMenuItem) {
         window?.alphaValue = CGFloat(sender.tag) / 100
+    }
+
+    @objc private func collapseAction() {
+        toggleCollapsed()
     }
 
     @objc private func penAction() {
@@ -341,6 +418,58 @@ final class FloatingImageView: NSView {
                 flash.removeFromSuperview()
             }
         }
+    }
+
+    // MARK: - Collapse / snap
+
+    /// GrabIt-style double-click: fold the panel down to a thumbnail,
+    /// double-click again to restore the saved frame.
+    private func toggleCollapsed() {
+        guard let window else { return }
+        if let saved = expandedFrame {
+            expandedFrame = nil
+            window.setFrame(saved, display: true, animate: true)
+        } else {
+            expandedFrame = window.frame
+            let f = window.frame
+            let w = min(160, f.width)
+            let h = w / max(f.width / max(f.height, 1), 0.01)
+            let origin = CGPoint(x: f.midX - w / 2, y: f.midY - h / 2)
+            window.setFrame(CGRect(origin: origin, size: CGSize(width: w, height: h)),
+                            display: true, animate: true)
+        }
+    }
+
+    /// Snap the dragged frame to screen edges and other panels' edges and
+    /// centers, like Photoshop smart guides.
+    private func snappedOrigin(for proposed: CGRect) -> CGPoint {
+        guard let window else { return proposed.origin }
+        let mouse = NSEvent.mouseLocation
+        var xs: [CGFloat] = [], ys: [CGFloat] = []
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? window.screen {
+            let f = screen.visibleFrame
+            xs += [f.minX, f.midX, f.maxX]
+            ys += [f.minY, f.midY, f.maxY]
+        }
+        for p in FloatingWindowManager.shared.panels where p !== window {
+            xs += [p.frame.minX, p.frame.midX, p.frame.maxX]
+            ys += [p.frame.minY, p.frame.midY, p.frame.maxY]
+        }
+        let threshold: CGFloat = 8
+        var dx: CGFloat = 0, dy: CGFloat = 0, bestX = threshold, bestY = threshold
+        for g in xs {
+            for edge in [proposed.minX, proposed.midX, proposed.maxX] {
+                let d = abs(g - edge)
+                if d <= bestX { bestX = d; dx = g - edge }
+            }
+        }
+        for g in ys {
+            for edge in [proposed.minY, proposed.midY, proposed.maxY] {
+                let d = abs(g - edge)
+                if d <= bestY { bestY = d; dy = g - edge }
+            }
+        }
+        return CGPoint(x: proposed.minX + dx, y: proposed.minY + dy)
     }
 
     // MARK: - Geometry
@@ -407,5 +536,12 @@ final class FloatingImageView: NSView {
                              y: mouse.y - newH * fracY)
         window.setFrame(CGRect(origin: origin, size: CGSize(width: newW, height: newH)),
                         display: true)
+    }
+}
+
+extension FloatingImageView: NSDraggingSource {
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        .copy
     }
 }
