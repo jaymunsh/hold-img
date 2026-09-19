@@ -54,8 +54,9 @@ final class ScreenCaptureService {
     /// display's native pixel resolution so captures stay sharp on Retina.
     private static func nativeResolutionConfig(for filter: SCContentFilter) -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
-        config.width = Int(filter.contentRect.width * filter.pointPixelScale)
-        config.height = Int(filter.contentRect.height * filter.pointPixelScale)
+        let scale = CGFloat(filter.pointPixelScale)
+        config.width = Int(filter.contentRect.width * scale)
+        config.height = Int(filter.contentRect.height * scale)
         config.captureResolution = .best
         return config
     }

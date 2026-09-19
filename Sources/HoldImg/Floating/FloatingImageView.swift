@@ -2,18 +2,34 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// Content view of a floating panel: draws the image aspect-fit and handles
-/// move, resize, zoom, copy, and context-menu interactions.
+/// move, resize, zoom, copy, annotation, and context-menu interactions.
 final class FloatingImageView: NSView {
-    private let image: NSImage
+    var image: NSImage {
+        didSet { needsDisplay = true }
+    }
 
     private enum Corner {
         case none, topLeft, topRight, bottomLeft, bottomRight
+    }
+
+    /// Freehand annotation in normalized (0...1) image coordinates so strokes
+    /// stay aligned when the panel is resized or zoomed.
+    private struct Stroke {
+        var points: [CGPoint]
+        var color: NSColor
+        var widthNorm: CGFloat  // fraction of image height
     }
 
     private var dragStartGlobal: CGPoint = .zero
     private var dragStartFrame: CGRect = .zero
     private var dragCorner: Corner = .none
     private var didMove = false
+
+    private(set) var isPenMode = false
+    private var strokes: [Stroke] = []
+    private var activeStroke: Stroke?
+    private var penColorIndex = 0
+    private var hoverTracking: NSTrackingArea?
 
     private let cornerSize: CGFloat = 14
     private let minDimension: CGFloat = 32
@@ -31,11 +47,157 @@ final class FloatingImageView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         image.draw(in: bounds)
+        for stroke in strokes + [activeStroke].compactMap({ $0 }) {
+            stroke.color.setStroke()
+            let path = NSBezierPath()
+            path.lineWidth = max(stroke.widthNorm * bounds.height, 0.5)
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            for (i, p) in stroke.points.enumerated() {
+                let v = denormalize(p)
+                i == 0 ? path.move(to: v) : path.line(to: v)
+            }
+            path.stroke()
+        }
+    }
+
+    // MARK: - Hover tracking / toolbar
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = hoverTracking { removeTrackingArea(t) }
+        hoverTracking = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(hoverTracking!)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        panel?.hoverToolbar.show()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if !isPenMode { panel?.hoverToolbar.hide() }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        if isPenMode { NSCursor.crosshair.set() }
+    }
+
+    // MARK: - Pen mode
+
+    func enterPenMode() {
+        isPenMode = true
+        NSCursor.crosshair.set()
+    }
+
+    func exitPenMode(bake: Bool) {
+        if bake, let baked = bakeAnnotations() {
+            image = baked
+            panel?.setImage(baked)
+        }
+        strokes.removeAll()
+        activeStroke = nil
+        isPenMode = false
+        needsDisplay = true
+    }
+
+    func undoStroke() {
+        if activeStroke != nil {
+            activeStroke = nil
+        } else {
+            strokes.popLast()
+        }
+        needsDisplay = true
+    }
+
+    func clearStrokes() {
+        strokes.removeAll()
+        activeStroke = nil
+        needsDisplay = true
+    }
+
+    func selectPenColor(_ index: Int) {
+        penColorIndex = index
+    }
+
+    private func normalize(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: p.x / max(bounds.width, 1), y: p.y / max(bounds.height, 1))
+    }
+
+    private func denormalize(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: p.x * bounds.width, y: p.y * bounds.height)
+    }
+
+    private func clampNorm(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: min(max(p.x, 0), 1), y: min(max(p.y, 0), 1))
+    }
+
+    private func beginStroke(at point: CGPoint) {
+        activeStroke = Stroke(points: [normalize(point)],
+                              color: PanelToolbar.penColors[penColorIndex],
+                              widthNorm: 3.0 / max(bounds.height, 1))
+    }
+
+    private func appendStroke(at point: CGPoint) {
+        activeStroke?.points.append(normalize(point))
+        needsDisplay = true
+    }
+
+    private func endStroke() {
+        guard var stroke = activeStroke else { return }
+        if stroke.points.count == 1 {
+            // A single tap: nudge a second point so a round dot is drawn.
+            stroke.points.append(CGPoint(x: stroke.points[0].x + 0.002,
+                                         y: stroke.points[0].y))
+        }
+        strokes.append(stroke)
+        activeStroke = nil
+        needsDisplay = true
+    }
+
+    /// Renders the strokes onto the image at its native pixel size.
+    private func bakeAnnotations() -> NSImage? {
+        guard !strokes.isEmpty,
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return nil }
+        let pxW = cg.width, pxH = cg.height
+        guard let ctx = CGContext(data: nil, width: pxW, height: pxH,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: pxW, height: pxH))
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        for stroke in strokes {
+            ctx.setStrokeColor(stroke.color.cgColor)
+            ctx.setLineWidth(max(stroke.widthNorm * CGFloat(pxH), 0.5))
+            for (i, raw) in stroke.points.enumerated() {
+                let p = clampNorm(raw)
+                let v = CGPoint(x: p.x * CGFloat(pxW), y: p.y * CGFloat(pxH))
+                i == 0 ? ctx.move(to: v) : ctx.addLine(to: v)
+            }
+            ctx.strokePath()
+        }
+        guard let out = ctx.makeImage() else { return nil }
+        let rep = NSBitmapImageRep(cgImage: out)
+        rep.size = image.size
+        let result = NSImage(size: image.size)
+        result.addRepresentation(rep)
+        return result
     }
 
     // MARK: - Mouse
 
     override func mouseDown(with event: NSEvent) {
+        if isPenMode {
+            beginStroke(at: convert(event.locationInWindow, from: nil))
+            return
+        }
         if event.clickCount == 2 {
             window?.close()
             return
@@ -47,6 +209,10 @@ final class FloatingImageView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isPenMode {
+            appendStroke(at: convert(event.locationInWindow, from: nil))
+            return
+        }
         guard let window else { return }
         let mouse = NSEvent.mouseLocation
         let dx = mouse.x - dragStartGlobal.x
@@ -61,6 +227,10 @@ final class FloatingImageView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isPenMode {
+            endStroke()
+            return
+        }
         if !didMove, dragCorner == .none {
             panel?.copyImageToPasteboard()
             flashCopyFeedback()
@@ -86,6 +256,7 @@ final class FloatingImageView: NSView {
         copyItem.keyEquivalentModifierMask = .command
         let saveItem = menu.addItem(withTitle: "다른 이름으로 저장…", action: #selector(saveAction), keyEquivalent: "s")
         saveItem.keyEquivalentModifierMask = .command
+        menu.addItem(withTitle: "펜으로 표시", action: #selector(penAction), keyEquivalent: "p")
         menu.addItem(.separator())
 
         let topItem = menu.addItem(withTitle: "항상 위에 표시", action: #selector(toggleAlwaysOnTop), keyEquivalent: "t")
@@ -134,6 +305,13 @@ final class FloatingImageView: NSView {
 
     @objc private func setOpacity(_ sender: NSMenuItem) {
         window?.alphaValue = CGFloat(sender.tag) / 100
+    }
+
+    @objc private func penAction() {
+        guard let panel else { return }
+        enterPenMode()
+        panel.hoverToolbar.setMode(.pen)
+        panel.hoverToolbar.show()
     }
 
     @objc private func closeAction() {
