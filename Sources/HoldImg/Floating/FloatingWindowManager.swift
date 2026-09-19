@@ -10,6 +10,9 @@ final class FloatingWindowManager {
     /// True while all panels are parked off-screen (GrabIt-style hide all).
     private(set) var allHidden = false
 
+    /// Recently closed panels (image + frame) for undo-close, newest last.
+    private var closedStack: [(image: NSImage, frame: CGRect)] = []
+
     /// Shows a floating panel occupying `frameInScreen` (global AppKit coords).
     @discardableResult
     func show(image: NSImage, frameInScreen rect: CGRect) -> FloatingPanel {
@@ -49,6 +52,17 @@ final class FloatingWindowManager {
         panels.forEach { $0.clickThrough = false }
     }
 
+    var canReopen: Bool { !closedStack.isEmpty }
+
+    /// Reopens the most recently closed panel at its previous frame.
+    func reopenLastClosed() {
+        guard let last = closedStack.popLast() else {
+            NSSound.beep()
+            return
+        }
+        show(image: last.image, frameInScreen: last.frame)
+    }
+
     private func present(_ panel: FloatingPanel) -> FloatingPanel {
         // A freshly presented panel resets the parked state — it would be
         // confusing for a new capture to land on a hidden desktop.
@@ -62,7 +76,10 @@ final class FloatingWindowManager {
         ) { [weak self] note in
             guard let closing = note.object as? FloatingPanel else { return }
             Task { @MainActor [weak self] in
-                self?.panels.removeAll { $0 === closing }
+                guard let self else { return }
+                self.panels.removeAll { $0 === closing }
+                self.closedStack.append((closing.image, closing.frame))
+                if self.closedStack.count > 10 { self.closedStack.removeFirst() }
             }
         }
         return panel

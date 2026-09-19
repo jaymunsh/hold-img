@@ -6,6 +6,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var recentMenuItem: NSMenuItem?
     private var hideMenuItem: NSMenuItem?
+    private var reopenMenuItem: NSMenuItem?
 
     override init() {
         super.init()
@@ -26,6 +27,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         recentMenuItem = recent
         menu.addItem(.separator())
 
+        let reopen = action("마지막으로 닫은 창 복원", #selector(reopenClosed))
+        reopen.setShortcut(for: .reopenClosed)
+        menu.addItem(reopen)
+        reopenMenuItem = reopen
         let hide = action("모든 창 숨기기", #selector(toggleHidden))
         hide.setShortcut(for: .toggleHidden)
         menu.addItem(hide)
@@ -87,6 +92,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         rebuildRecentSubmenu()
         hideMenuItem?.title = FloatingWindowManager.shared.allHidden
             ? "모든 창 보이기" : "모든 창 숨기기"
+        reopenMenuItem?.isEnabled = FloatingWindowManager.shared.canReopen
     }
 
     private func rebuildRecentSubmenu() {
@@ -177,6 +183,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func clearHistory() {
         CaptureHistoryStore.shared.clear()
+    }
+
+    @objc private func reopenClosed() {
+        FloatingWindowManager.shared.reopenLastClosed()
     }
 
     @objc private func toggleHidden() {

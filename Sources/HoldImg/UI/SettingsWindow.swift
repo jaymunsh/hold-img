@@ -64,6 +64,9 @@ struct SettingsView: View {
                 LabeledContent("모든 창 숨기기/보이기") {
                     KeyboardShortcuts.Recorder(for: .toggleHidden)
                 }
+                LabeledContent("닫은 창 복원") {
+                    KeyboardShortcuts.Recorder(for: .reopenClosed)
+                }
             }
             Section("앱") {
                 Toggle("로그인 시 자동 실행", isOn: $settings.launchAtLogin)

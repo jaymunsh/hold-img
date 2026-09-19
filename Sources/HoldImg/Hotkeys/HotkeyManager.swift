@@ -12,6 +12,8 @@ extension KeyboardShortcuts.Name {
                                  default: .init(.v, modifiers: [.control, .option]))
     static let toggleHidden = Self("toggleHidden",
                                    default: .init(.h, modifiers: [.control, .option]))
+    static let reopenClosed = Self("reopenClosed",
+                                   default: .init(.z, modifiers: [.control, .option]))
 }
 
 enum HotkeyManager {
@@ -31,6 +33,9 @@ enum HotkeyManager {
         }
         KeyboardShortcuts.onKeyDown(for: .toggleHidden) {
             Task { @MainActor in FloatingWindowManager.shared.toggleHidden() }
+        }
+        KeyboardShortcuts.onKeyDown(for: .reopenClosed) {
+            Task { @MainActor in FloatingWindowManager.shared.reopenLastClosed() }
         }
     }
 

@@ -56,6 +56,23 @@ final class FloatingImageView: NSView {
     private var penColorIndex = 0
     private var hoverTracking: NSTrackingArea?
 
+    /// Transient size readout shown while resizing/zooming (overlay only —
+    /// never baked into the image).
+    private lazy var sizeBadge: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        label.textColor = .white
+        label.alignment = .center
+        label.wantsLayer = true
+        label.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        label.layer?.cornerRadius = 6
+        label.alphaValue = 0
+        label.isHidden = true
+        addSubview(label)
+        return label
+    }()
+    private var sizeBadgeTimer: Timer?
+
     private let cornerSize: CGFloat = 14
     private let minDimension: CGFloat = 32
     private let maxDimension: CGFloat = 8192
@@ -659,6 +676,9 @@ final class FloatingImageView: NSView {
         menu.setSubmenu(opacityMenu, for: opacityItem)
         menu.addItem(.separator())
 
+        menu.addItem(withTitle: "오른쪽으로 회전", action: #selector(rotateAction), keyEquivalent: "r")
+        menu.addItem(withTitle: "왼쪽으로 회전", action: #selector(rotateCCWAction), keyEquivalent: "R")
+        menu.addItem(withTitle: "좌우 반전", action: #selector(flipAction), keyEquivalent: "f")
         menu.addItem(withTitle: "축소/복원", action: #selector(collapseAction), keyEquivalent: "")
         let closeItem = menu.addItem(withTitle: "닫기", action: #selector(closeAction), keyEquivalent: "w")
         closeItem.keyEquivalentModifierMask = .command
@@ -701,6 +721,18 @@ final class FloatingImageView: NSView {
 
     @objc private func collapseAction() {
         toggleCollapsed()
+    }
+
+    @objc private func rotateAction() {
+        panel?.rotate(clockwise: true)
+    }
+
+    @objc private func rotateCCWAction() {
+        panel?.rotate(clockwise: false)
+    }
+
+    @objc private func flipAction() {
+        panel?.flipHorizontal()
     }
 
     @objc private func penAction() {
@@ -835,6 +867,7 @@ final class FloatingImageView: NSView {
         )
         window.setFrame(CGRect(origin: origin, size: CGSize(width: newW, height: newH)),
                         display: true)
+        showSizeBadge()
     }
 
     private func zoom(by factor: CGFloat, anchoredAt viewPoint: CGPoint) {
@@ -852,6 +885,37 @@ final class FloatingImageView: NSView {
                              y: mouse.y - newH * fracY)
         window.setFrame(CGRect(origin: origin, size: CGSize(width: newW, height: newH)),
                         display: true)
+        showSizeBadge()
+    }
+
+    // MARK: - Size badge
+
+    /// Shows the current view dimensions as a transient overlay at the
+    /// bottom center of the panel — never baked into the image.
+    private func showSizeBadge() {
+        let s = bounds.size
+        sizeBadge.stringValue =
+            "\(Int(s.width.rounded())) × \(Int(s.height.rounded()))"
+        sizeBadge.sizeToFit()
+        let w = sizeBadge.frame.width + 16
+        let h = sizeBadge.frame.height + 8
+        sizeBadge.frame = NSRect(x: (s.width - w) / 2,
+                                 y: 8, width: w, height: h)
+        sizeBadge.isHidden = false
+        sizeBadge.alphaValue = 1
+        sizeBadgeTimer?.invalidate()
+        sizeBadgeTimer = Timer.scheduledTimer(withTimeInterval: 1.0,
+                                            repeats: false) { [weak self] _ in
+            guard let self else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.3
+                self.sizeBadge.animator().alphaValue = 0
+            } completionHandler: {
+                Task { @MainActor in
+                    self.sizeBadge.isHidden = true
+                }
+            }
+        }
     }
 }
 

@@ -40,6 +40,7 @@ struct ShortcutsView: View {
                 row("마지막 영역 재캡처", shortcutText(.recaptureRegion))
                 row("클립보드 이미지 붙여넣기", shortcutText(.pasteFloat))
                 row("모든 창 숨기기/보이기", shortcutText(.toggleHidden))
+                row("닫은 창 복원", shortcutText(.reopenClosed))
             }
             Section("플로팅 창 (포커스된 상태)") {
                 row("클릭 — 이미지 복사", "")
@@ -51,6 +52,9 @@ struct ShortcutsView: View {
                 row("복사", "⌘C")
                 row("다른 이름으로 저장", "⌘S")
                 row("주석 모드 (펜·화살표·사각형·모자이크·텍스트)", "P")
+                row("회전 90° (시계/반시계)", "R / ⇧R")
+                row("좌우 반전", "F")
+                row("미세 이동 (1pt / 10pt)", "방향키 / ⇧방향키")
                 row("항상 위 토글", "T")
                 row("클릭-스루 토글", "G")
                 row("닫기", "⌘W / Esc")

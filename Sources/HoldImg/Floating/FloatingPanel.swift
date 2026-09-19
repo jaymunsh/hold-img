@@ -97,7 +97,10 @@ final class FloatingPanel: NSPanel {
 
     override func keyDown(with event: NSEvent) {
         let view = contentView as? FloatingImageView
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // Only real modifiers — arrows carry .function, which would
+        // otherwise break the plain/shift comparisons below.
+        let flags = event.modifierFlags
+            .intersection([.shift, .control, .option, .command])
         if event.keyCode == 53 { // Esc
             if view?.isPenMode == true {
                 view?.exitPenMode(bake: false)
@@ -128,11 +131,22 @@ final class FloatingPanel: NSPanel {
                 break
             }
         }
-        if flags.isEmpty {
+        if flags.isEmpty || flags == .shift {
+            let step: CGFloat = flags == .shift ? 10 : 1
             switch event.keyCode {
-            case 17: alwaysOnTop.toggle(); return // T
-            case 5: clickThrough.toggle(); return // G
-            case 35: // P
+            case 17 where flags.isEmpty: alwaysOnTop.toggle(); return // T
+            case 5 where flags.isEmpty: clickThrough.toggle(); return // G
+            case 15 where view?.isPenMode != true: // R / ⇧R
+                rotate(clockwise: flags.isEmpty)
+                return
+            case 3 where flags.isEmpty && view?.isPenMode != true: // F
+                flipHorizontal()
+                return
+            case 123: nudge(dx: -step, dy: 0); return // ←
+            case 124: nudge(dx: step, dy: 0); return // →
+            case 125: nudge(dx: 0, dy: -step); return // ↓
+            case 126: nudge(dx: 0, dy: step); return // ↑
+            case 35 where flags.isEmpty: // P
                 if view?.isPenMode == true {
                     view?.exitPenMode(bake: false)
                     hoverToolbar.setMode(.normal)
@@ -147,6 +161,58 @@ final class FloatingPanel: NSPanel {
             }
         }
         super.keyDown(with: event)
+    }
+
+    /// Moves the window in point increments (Shift = 10pt per press).
+    private func nudge(dx: CGFloat, dy: CGFloat) {
+        setFrameOrigin(NSPoint(x: frame.minX + dx, y: frame.minY + dy))
+    }
+
+    /// Rotates the image 90° and re-frames the window around its center.
+    func rotate(clockwise: Bool = true) {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        guard let ctx = CGContext(data: nil, width: Int(h), height: Int(w),
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return }
+        ctx.translateBy(x: h / 2, y: w / 2)
+        ctx.rotate(by: clockwise ? -.pi / 2 : .pi / 2)
+        ctx.draw(cg, in: CGRect(x: -w / 2, y: -h / 2, width: w, height: h))
+        applyTransformed(ctx, pointSize: NSSize(width: image.size.height,
+                                              height: image.size.width))
+        let newSize = NSSize(width: frame.height, height: frame.width)
+        setFrame(NSRect(x: frame.midX - newSize.width / 2,
+                        y: frame.midY - newSize.height / 2,
+                        width: newSize.width, height: newSize.height),
+                 display: true)
+    }
+
+    /// Mirrors the image left-right; window frame is unchanged.
+    func flipHorizontal() {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        guard let ctx = CGContext(data: nil, width: Int(w), height: Int(h),
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return }
+        ctx.translateBy(x: w, y: 0)
+        ctx.scaleBy(x: -1, y: 1)
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        applyTransformed(ctx, pointSize: image.size)
+    }
+
+    private func applyTransformed(_ ctx: CGContext, pointSize: NSSize) {
+        guard let out = ctx.makeImage() else { return }
+        let rep = NSBitmapImageRep(cgImage: out)
+        rep.size = pointSize
+        let transformed = NSImage(size: pointSize)
+        transformed.addRepresentation(rep)
+        setImage(transformed)
     }
 
     func copyImageToPasteboard() {
