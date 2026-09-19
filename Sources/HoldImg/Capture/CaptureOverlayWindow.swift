@@ -50,7 +50,10 @@ final class CaptureOverlayView: NSView {
     /// Frozen frame with the dim applied, rendered once — drawing it per
     /// mouse event is the main cost, so it is precomposited at init.
     private let backdropImage: NSImage
-    private let sampler: PixelSampler?
+    private let frozenCGImage: CGImage
+    /// Full RGBA copy of the display (~60MB on Retina) — built lazily since
+    /// the loupe is off by default and most captures never sample a pixel.
+    private lazy var sampler: PixelSampler? = PixelSampler(cgImage: frozenCGImage)
     private let imageSize: CGSize
 
     /// Candidate windows for .window mode, in view coordinates, front to back.
@@ -82,7 +85,7 @@ final class CaptureOverlayView: NSView {
         imageSize = CGSize(width: displayFrame.image.width, height: displayFrame.image.height)
         displayImage = NSImage(cgImage: displayFrame.image,
                                size: displayFrame.screen.frame.size)
-        sampler = PixelSampler(cgImage: displayFrame.image)
+        frozenCGImage = displayFrame.image
 
         // Precomposite the dimmed backdrop at native pixel size.
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil,

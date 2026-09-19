@@ -22,12 +22,22 @@ extension NSImage {
 
 enum ClipboardService {
     static func copy(_ image: NSImage) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        let item = NSPasteboardItem()
-        if let png = image.pngData() { item.setData(png, forType: .png) }
-        if let tiff = image.tiffRepresentation { item.setData(tiff, forType: .tiff) }
-        pb.writeObjects([item])
+        guard let cg = image.cgImageRef else { return }
+        // PNG+TIFF encoding a Retina frame costs ~100-300ms; do it off the
+        // main thread and only the pasteboard write stays on main.
+        Task.detached(priority: .userInitiated) {
+            let rep = NSBitmapImageRep(cgImage: cg)
+            let png = rep.representation(using: .png, properties: [:])
+            let tiff = rep.tiffRepresentation
+            await MainActor.run {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                let item = NSPasteboardItem()
+                if let png { item.setData(png, forType: .png) }
+                if let tiff { item.setData(tiff, forType: .tiff) }
+                pb.writeObjects([item])
+            }
+        }
     }
 
     static func imageFromPasteboard() -> NSImage? {

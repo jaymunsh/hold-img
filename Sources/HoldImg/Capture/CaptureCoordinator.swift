@@ -40,7 +40,8 @@ final class CaptureCoordinator {
                 return
             }
             do {
-                let frames = try await ScreenCaptureService.shared.captureAllDisplays()
+                let content = try await ScreenCaptureService.shared.shareableContent()
+                let frames = try await ScreenCaptureService.shared.captureAllDisplays(from: content)
                 guard let image = Self.stitch(rect: rect, frames: frames) else { return }
                 present(image, inScreenRect: rect)
             } catch {
@@ -64,14 +65,15 @@ final class CaptureCoordinator {
                 return
             }
             do {
-                let frames = try await ScreenCaptureService.shared.captureAllDisplays()
+                let content = try await ScreenCaptureService.shared.shareableContent()
+                let frames = try await ScreenCaptureService.shared.captureAllDisplays(from: content)
                 guard !frames.isEmpty else {
                     showPermissionAlert()
                     return
                 }
                 frozenFrames = frames
                 if mode == .window {
-                    capturableWindows = (try? await ScreenCaptureService.shared.capturableWindows()) ?? []
+                    capturableWindows = ScreenCaptureService.shared.capturableWindows(from: content)
                 }
                 showOverlays(mode: mode)
             } catch {

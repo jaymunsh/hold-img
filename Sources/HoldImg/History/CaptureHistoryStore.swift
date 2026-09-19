@@ -27,10 +27,18 @@ final class CaptureHistoryStore {
 
     @MainActor
     func add(_ image: NSImage) {
-        guard let data = image.pngData() else { return }
-        let name = Self.filenameFormatter.string(from: Date()) + "-\(UUID().uuidString.prefix(6)).png"
-        try? data.write(to: directory.appendingPathComponent(name))
-        prune()
+        guard let cg = image.cgImageRef else { return }
+        let directory = self.directory
+        let name = Self.filenameFormatter.string(from: Date())
+            + "-\(UUID().uuidString.prefix(6)).png"
+        // PNG encoding a Retina frame costs ~100-300ms — too long to spend
+        // on the main thread while the new panel is animating in.
+        Task.detached(priority: .utility) {
+            guard let data = NSBitmapImageRep(cgImage: cg)
+                .representation(using: .png, properties: [:]) else { return }
+            try? data.write(to: directory.appendingPathComponent(name))
+            await MainActor.run { CaptureHistoryStore.shared.prune() }
+        }
     }
 
     /// Newest first.

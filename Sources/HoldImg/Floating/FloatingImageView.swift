@@ -161,6 +161,10 @@ final class FloatingImageView: NSView {
         return path
     }
 
+    /// Reusable downscale buffer for mosaic rendering — allocating an
+    /// NSImage and locking focus per draw call is expensive during drags.
+    private var mosaicScratch: NSBitmapImageRep?
+
     /// Pixelates a region of the image (view coordinates) as a live
     /// preview for the mosaic tool.
     private func drawMosaic(in viewRect: CGRect) {
@@ -171,14 +175,32 @@ final class FloatingImageView: NSView {
         let sy = image.size.height / max(bounds.height, 1)
         let src = CGRect(x: viewRect.minX * sx, y: viewRect.minY * sy,
                          width: viewRect.width * sx, height: viewRect.height * sy)
-        let small = NSImage(size: smallSize)
-        small.lockFocus()
+        let w = Int(smallSize.width.rounded(.up))
+        let h = Int(smallSize.height.rounded(.up))
+        if let rep = mosaicScratch, rep.pixelsWide < w || rep.pixelsHigh < h {
+            mosaicScratch = nil
+        }
+        if mosaicScratch == nil {
+            mosaicScratch = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0)
+        }
+        guard let rep = mosaicScratch,
+              let repCtx = NSGraphicsContext(bitmapImageRep: rep) else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = repCtx
         image.draw(in: NSRect(origin: .zero, size: smallSize), from: src,
                    operation: .copy, fraction: 1)
-        small.unlockFocus()
+        NSGraphicsContext.restoreGraphicsState()
+
         NSGraphicsContext.current?.saveGraphicsState()
         NSGraphicsContext.current?.imageInterpolation = .none
-        small.draw(in: viewRect)
+        rep.draw(in: viewRect,
+                 from: NSRect(origin: .zero, size: smallSize),
+                 operation: .sourceOver, fraction: 1,
+                 respectFlipped: true, hints: nil)
         NSGraphicsContext.current?.restoreGraphicsState()
     }
 
@@ -906,13 +928,15 @@ final class FloatingImageView: NSView {
         sizeBadgeTimer?.invalidate()
         sizeBadgeTimer = Timer.scheduledTimer(withTimeInterval: 1.0,
                                             repeats: false) { [weak self] _ in
-            guard let self else { return }
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.3
-                self.sizeBadge.animator().alphaValue = 0
-            } completionHandler: {
-                Task { @MainActor in
-                    self.sizeBadge.isHidden = true
+            Task { @MainActor in
+                guard let self else { return }
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.3
+                    self.sizeBadge.animator().alphaValue = 0
+                } completionHandler: {
+                    Task { @MainActor in
+                        self.sizeBadge.isHidden = true
+                    }
                 }
             }
         }

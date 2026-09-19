@@ -7,6 +7,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var recentMenuItem: NSMenuItem?
     private var hideMenuItem: NSMenuItem?
     private var reopenMenuItem: NSMenuItem?
+    /// History PNGs are write-once files, so decoded thumbnails are safe to
+    /// keep keyed by path — avoids re-decoding every entry on each menu open.
+    private let thumbnailCache = NSCache<NSString, NSImage>()
 
     override init() {
         super.init()
@@ -112,8 +115,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 )
                 menuItem.target = self
                 menuItem.representedObject = entry.url
-                if let image = NSImage(contentsOf: entry.url) {
+                let key = entry.url.path as NSString
+                if let cached = thumbnailCache.object(forKey: key) {
+                    menuItem.image = cached
+                } else if let image = NSImage(contentsOf: entry.url) {
                     image.size = thumbnailSize(for: image.size)
+                    thumbnailCache.setObject(image, forKey: key)
                     menuItem.image = image
                 }
                 submenu.addItem(menuItem)

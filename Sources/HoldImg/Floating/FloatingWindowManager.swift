@@ -13,6 +13,10 @@ final class FloatingWindowManager {
     /// Recently closed panels (image + frame) for undo-close, newest last.
     private var closedStack: [(image: NSImage, frame: CGRect)] = []
 
+    /// willClose observer tokens per panel — removed when the panel closes,
+    /// otherwise NotificationCenter would retain them forever.
+    private var closeObservers: [ObjectIdentifier: NSObjectProtocol] = [:]
+
     /// Shows a floating panel occupying `frameInScreen` (global AppKit coords).
     @discardableResult
     func show(image: NSImage, frameInScreen rect: CGRect) -> FloatingPanel {
@@ -69,7 +73,7 @@ final class FloatingWindowManager {
         allHidden = false
         panel.orderFrontRegardless()
         panels.append(panel)
-        NotificationCenter.default.addObserver(
+        let token = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: panel,
             queue: .main
@@ -80,8 +84,13 @@ final class FloatingWindowManager {
                 self.panels.removeAll { $0 === closing }
                 self.closedStack.append((closing.image, closing.frame))
                 if self.closedStack.count > 10 { self.closedStack.removeFirst() }
+                let id = ObjectIdentifier(closing)
+                if let observer = self.closeObservers.removeValue(forKey: id) {
+                    NotificationCenter.default.removeObserver(observer)
+                }
             }
         }
+        closeObservers[ObjectIdentifier(panel)] = token
         return panel
     }
 
