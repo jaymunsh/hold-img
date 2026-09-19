@@ -619,7 +619,7 @@ final class FloatingImageView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if isPenMode {
-            if tool == .pen {
+            if tool == .pen || tool == .highlighter {
                 endStroke()
             } else if let shape = activeShape {
                 annotations.append(Annotation(shape: shape, color: penColor,
