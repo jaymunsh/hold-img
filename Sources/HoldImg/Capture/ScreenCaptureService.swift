@@ -35,7 +35,7 @@ final class ScreenCaptureService {
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let image = try await SCScreenshotManager.captureImage(
                 contentFilter: filter,
-                configuration: SCStreamConfiguration()
+                configuration: Self.nativeResolutionConfig(for: filter)
             )
             frames.append(DisplayFrame(display: display, screen: screen, image: image))
         }
@@ -46,8 +46,18 @@ final class ScreenCaptureService {
         let filter = SCContentFilter(desktopIndependentWindow: window)
         return try await SCScreenshotManager.captureImage(
             contentFilter: filter,
-            configuration: SCStreamConfiguration()
+            configuration: Self.nativeResolutionConfig(for: filter)
         )
+    }
+
+    /// Default SCStreamConfiguration outputs at point size (1x); ask for the
+    /// display's native pixel resolution so captures stay sharp on Retina.
+    private static func nativeResolutionConfig(for filter: SCContentFilter) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        config.width = Int(filter.contentRect.width * filter.pointPixelScale)
+        config.height = Int(filter.contentRect.height * filter.pointPixelScale)
+        config.captureResolution = .best
+        return config
     }
 
     /// On-screen, normal-layer windows owned by other apps, front to back.

@@ -150,16 +150,29 @@ final class CaptureCoordinator {
     }
 
     /// Crops `rect` (global AppKit) out of the frozen display frames,
-    /// stitching across multiple displays if needed.
+    /// stitching across multiple displays if needed. Renders at the highest
+    /// pixel scale of the covered displays so the result stays Retina-sharp.
     static func stitch(rect: CGRect, frames: [DisplayFrame]) -> NSImage? {
-        let canvas = NSImage(size: rect.size)
-        canvas.lockFocus()
-        defer { canvas.unlockFocus() }
-        NSGraphicsContext.current?.imageInterpolation = .high
-        var drew = false
-        for frame in frames {
+        let covered = frames.filter { frame in
+            let i = rect.intersection(frame.screen.frame)
+            return !i.isNull && !i.isEmpty
+        }
+        guard !covered.isEmpty else { return nil }
+        let maxScale = covered
+            .map { CGFloat($0.image.width) / max($0.screen.frame.width, 1) }
+            .max() ?? 1
+        let pxW = Int((rect.width * maxScale).rounded(.up))
+        let pxH = Int((rect.height * maxScale).rounded(.up))
+        guard pxW > 0, pxH > 0,
+              let ctx = CGContext(data: nil, width: pxW, height: pxH,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.scaleBy(x: maxScale, y: maxScale)
+        for frame in covered {
             let intersection = rect.intersection(frame.screen.frame)
-            guard !intersection.isNull, !intersection.isEmpty else { continue }
             let cropPixels = ScreenGeometry.pixelRect(
                 forSelection: intersection,
                 inScreenFrame: frame.screen.frame,
@@ -167,16 +180,17 @@ final class CaptureCoordinator {
             )
             guard !cropPixels.isEmpty,
                   let crop = frame.image.cropping(to: cropPixels) else { continue }
-            let dest = CGRect(
-                x: intersection.minX - rect.minX,
-                y: intersection.minY - rect.minY,
-                width: intersection.width,
-                height: intersection.height
-            )
-            NSImage(cgImage: crop, size: intersection.size).draw(in: dest)
-            drew = true
+            ctx.draw(crop, in: CGRect(x: intersection.minX - rect.minX,
+                                      y: intersection.minY - rect.minY,
+                                      width: intersection.width,
+                                      height: intersection.height))
         }
-        return drew ? canvas : nil
+        guard let out = ctx.makeImage() else { return nil }
+        let rep = NSBitmapImageRep(cgImage: out)
+        rep.size = rect.size
+        let image = NSImage(size: rect.size)
+        image.addRepresentation(rep)
+        return image
     }
 
     // MARK: - Alerts
