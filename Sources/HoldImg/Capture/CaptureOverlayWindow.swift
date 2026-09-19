@@ -62,8 +62,8 @@ final class CaptureOverlayView: NSView {
     private var hoveredWindowIndex: Int?
     private var copiedFlashUntil: Date?
     /// Shared across displays so the toggle applies regardless of which
-    /// overlay currently holds key status.
-    private static var loupeEnabled = true
+    /// overlay currently holds key status. Off by default.
+    private static var loupeEnabled = false
 
     /// Aspect ratio (w/h) the drag selection is locked to, if any.
     private var aspectLock: CGFloat?
@@ -226,6 +226,12 @@ final class CaptureOverlayView: NSView {
             default:
                 super.keyDown(with: event)
             }
+            // A ratio key pressed mid-drag reshapes the in-flight selection
+            // from its anchor right away instead of waiting for the next
+            // mouse event.
+            if let start = dragStart, let cursor {
+                selection = constrainedRect(from: start, to: cursor)
+            }
             needsDisplay = true
             return
         }
@@ -312,14 +318,14 @@ final class CaptureOverlayView: NSView {
         case .region:
             if fixedSize != nil {
                 actionRow = [.text("클릭으로 \(constraintLabel) 캡처"), .divider,
+                             .key("M"), .text("돋보기"), .gap(8),
                              .key("6"), .text("크기 변경"), .gap(8),
                              .key("1"), .text("해제"), .gap(8),
-                             .key("M"), .text("돋보기"), .gap(8),
                              .key("Esc"), .text("취소")]
             } else {
                 actionRow = [.text("드래그로 영역 선택"), .divider,
-                             .key("C"), .text("컬러 복사"), .gap(8),
                              .key("M"), .text("돋보기"), .gap(8),
+                             .key("C"), .text("컬러 복사"), .gap(8),
                              .key("Esc"), .text("취소")]
             }
             let ratios: [(String, Bool)] = [
