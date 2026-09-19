@@ -329,12 +329,12 @@ final class CaptureOverlayView: NSView {
                              .key("Esc"), .text("취소")]
             }
             let ratios: [(String, Bool)] = [
-                ("1 자유",   aspectLock == nil && fixedSize == nil),
-                ("2 1:1",    aspectLock == 1),
-                ("3 4:3",    aspectLock == 4.0 / 3.0),
-                ("4 16:9",   aspectLock == 16.0 / 9.0),
-                ("5 16:10",  aspectLock == 1.6),
-                ("6 직접입력", fixedSize != nil),
+                ("1. 자유",   aspectLock == nil && fixedSize == nil),
+                ("2. 1:1",    aspectLock == 1),
+                ("3. 4:3",    aspectLock == 4.0 / 3.0),
+                ("4. 16:9",   aspectLock == 16.0 / 9.0),
+                ("5. 16:10",  aspectLock == 1.6),
+                ("6. 직접입력", fixedSize != nil),
             ]
             ratioRow = [.text("비율"), .gap(4)]
                 + ratios.map { HintItem.key($0.0, active: $0.1) }
