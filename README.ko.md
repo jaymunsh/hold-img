@@ -11,6 +11,7 @@ GrabIt/Snipaste 스타일의 macOS 플로팅 스크린샷 유틸리티.<br>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.ko.md">한국어</a> ·
+  <a href="https://jaymunsh.github.io/hold-img/manual.html">사용 설명서</a> ·
   <a href="https://github.com/jaymunsh/hold-img/releases">Releases</a> ·
   <a href="CHANGELOG.md">변경 로그</a>
 </p>
@@ -96,6 +97,9 @@ CLT(Command Line Tools) 전용 환경에는 XCTest가 없어 `swift test`는
 - 이미지 파일(JPG/PNG 등)을 메뉴에서 열어 플로팅 (포토프레임)
 - 캡처 화면에서 `M`으로 돋보기 토글(기본 꺼짐) + `C`로 픽셀 HEX 컬러 복사
 - 상단 힌트 바: 동작 칩(M 돋보기 · C 컬러 복사 · Esc 취소) + 비율 칩(`1. 자유`~`6. 직접입력`, 현재 비율 하이라이트)
+
+> 📖 스크린샷과 함께 자세한 사용 방법은
+> **[사용 설명서](https://jaymunsh.github.io/hold-img/manual.html)**를 참고하세요.
 
 ## 플로팅 창 조작
 

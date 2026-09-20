@@ -11,6 +11,7 @@ Capture a region and it instantly appears as an image panel that floats above ev
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.ko.md">한국어</a> ·
+  <a href="https://jaymunsh.github.io/hold-img/manual-en.html">User Guide</a> ·
   <a href="https://github.com/jaymunsh/hold-img/releases">Releases</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
@@ -91,6 +92,9 @@ System Settings → Privacy & Security → Screen Recording, then capture again.
 - Open image files (JPG/PNG…) as floating panels — like a picture frame
 - In the capture overlay, `M` toggles the loupe (off by default) and `C` copies the pixel's HEX color
 - Top hint bar: action chips (M Loupe · C Copy color · Esc Cancel) + ratio chips (`1. Free`–`6. Custom`, current ratio highlighted)
+
+> 📖 For detailed usage with screenshots, see the
+> **[User Guide](https://jaymunsh.github.io/hold-img/manual-en.html)**.
 
 ## Floating Panel Controls
 

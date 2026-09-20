@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HoldImg User Guide</title>
+<meta name="description" content="HoldImg — screenshots that float above your screen. Capture, annotate, copy — all in one step.">
+<style>
+  :root {
+    --accent: #3b6fe0;
+    --accent-bg: #e8effc;
+    --accent-bg-hover: #dfe9fb;
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --text: #1d1d1f;
+    --text2: #3a3a3e;
+    --muted: #6e6e73;
+    --border: #e3e3e8;
+    --kbd-bg: #f0f0f4;
+    --kbd-border: #c8c8d0;
+    --callout-warn-bg: #fdf3e6;
+    --callout-warn-border: #d97a00;
+    --figure-border: #e3e3e8;
+    --shadow: 0 12px 32px rgba(0,0,0,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #7ba3f0;
+      --accent-bg: #1c2c4a;
+      --accent-bg-hover: #24365c;
+      --bg: #141416;
+      --card: #1e1e21;
+      --text: #f2f2f4;
+      --text2: #cfcfd4;
+      --muted: #9a9aa0;
+      --border: #33333a;
+      --kbd-bg: #2c2c31;
+      --kbd-border: #4a4a52;
+      --callout-warn-bg: #33270f;
+      --callout-warn-border: #e0a04a;
+      --figure-border: #33333a;
+      --shadow: 0 12px 32px rgba(0,0,0,.5);
+    }
+    .hero img { box-shadow: 0 12px 32px rgba(0,0,0,.55); }
+    .callout { background: var(--accent-bg); }
+    .toc a { background: var(--accent-bg); }
+    .toc a:hover { background: var(--accent-bg-hover); }
+    .badge { background: var(--accent-bg); color: var(--accent); }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; scroll-padding-top: 20px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.7; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 48px 24px 96px; }
+
+  /* ── Hero ── */
+  .hero { text-align: center; padding: 32px 0 44px; }
+  .hero img.icon { width: 128px; height: 128px; border-radius: 28px; box-shadow: var(--shadow); }
+  .hero h1 { font-size: 42px; font-weight: 700; letter-spacing: -0.02em; margin-top: 20px; }
+  .hero p { color: var(--muted); font-size: 18px; margin-top: 8px; }
+  .badges { margin-top: 16px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+  .badge { display: inline-block; background: var(--accent-bg); color: var(--accent);
+    font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px; }
+  .lang-switch { margin-top: 18px; font-size: 14px; }
+  .lang-switch a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .lang-switch a:hover { text-decoration: underline; }
+  .lang-switch .cur { color: var(--muted); font-weight: 700; }
+
+  /* ── Common ── */
+  section { background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px 36px; margin-bottom: 24px; }
+  h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 6px; }
+  h2 .num { color: var(--accent); font-size: 15px; font-weight: 700;
+    vertical-align: super; margin-right: 8px; }
+  h3 { font-size: 17px; font-weight: 650; margin: 24px 0 8px; }
+  h3:first-of-type { margin-top: 16px; }
+  p { font-size: 15px; color: var(--text2); margin: 8px 0; }
+  p.muted, .muted { color: var(--muted); }
+  ul, ol { font-size: 15px; color: var(--text2); padding-left: 22px; margin: 8px 0; }
+  li { margin: 5px 0; }
+  li::marker { color: var(--accent); }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px;
+    background: var(--kbd-bg); padding: 2px 7px; border-radius: 6px; }
+
+  kbd {
+    display: inline-block; font-family: -apple-system, sans-serif; font-size: 12.5px;
+    font-weight: 600; color: var(--text2); background: var(--kbd-bg);
+    border: 1px solid var(--kbd-border); border-bottom-width: 2px;
+    border-radius: 6px; padding: 2px 8px; margin: 0 1px; white-space: nowrap;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14.5px; }
+  th { text-align: left; font-weight: 650; color: var(--muted); font-size: 12.5px;
+    text-transform: uppercase; letter-spacing: .04em;
+    padding: 8px 12px; border-bottom: 2px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text2); }
+  tr:last-child td { border-bottom: none; }
+  td.keys { white-space: nowrap; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+  @media (max-width: 700px) {
+    .grid2 { grid-template-columns: 1fr; }
+    section { padding: 24px 20px; }
+    .hero h1 { font-size: 34px; }
+  }
+  .mini { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .mini h4 { font-size: 14.5px; font-weight: 650; margin-bottom: 4px; }
+  .mini p { font-size: 13.5px; margin: 2px 0; }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-bg);
+    border-radius: 0 10px 10px 0; padding: 14px 18px; margin: 16px 0; font-size: 14.5px;
+    color: var(--text2); }
+  .callout.warn { border-color: var(--callout-warn-border); background: var(--callout-warn-bg); }
+
+  .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    margin: 16px 0; font-size: 14px; font-weight: 550; }
+  .flow .step { background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 14px; }
+  .flow .arrow { color: var(--muted); }
+
+  /* ── Screenshots ── */
+  figure { margin: 20px 0; text-align: center; }
+  figure img { max-width: 100%; border-radius: 12px; border: 1px solid var(--figure-border);
+    box-shadow: 0 6px 24px rgba(0,0,0,.10); }
+  @media (prefers-color-scheme: dark) {
+    figure img { box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+  }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  figure.inline { display: inline-block; margin: 10px 12px 10px 0; vertical-align: top; }
+
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 40px; }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* ── TOC ── */
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .toc a { font-size: 13.5px; color: var(--accent); text-decoration: none;
+    background: var(--accent-bg); border-radius: 8px; padding: 5px 12px; }
+  .toc a:hover { background: var(--accent-bg-hover); }
+
+  /* ── Back to top ── */
+  .toplink { position: fixed; right: 22px; bottom: 22px; width: 42px; height: 42px;
+    border-radius: 50%; background: var(--card); border: 1px solid var(--border);
+    color: var(--accent); font-size: 18px; text-decoration: none;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.12); opacity: 0; pointer-events: none;
+    transition: opacity .2s; }
+  .toplink.show { opacity: 1; pointer-events: auto; }
+</style>
+</head>
+<body>
+<div class="wrap" id="top">
+
+  <div class="hero">
+    <img class="icon" src="app-icon.png" alt="HoldImg icon">
+    <h1>HoldImg</h1>
+    <p>Screenshots that float above everything — capture, pin, and re-copy anytime</p>
+    <div class="badges">
+      <span class="badge">v1.0.0</span>
+      <span class="badge">macOS 15+</span>
+      <span class="badge">User Guide</span>
+    </div>
+    <p class="lang-switch"><a href="manual.html">한국어</a> · <span class="cur">English</span></p>
+  </div>
+
+  <section>
+    <h2>Contents</h2>
+    <div class="toc">
+      <a href="#install">Getting Started</a>
+      <a href="#concept">Core Concepts</a>
+      <a href="#hotkeys">Global Shortcuts</a>
+      <a href="#capture">Region Capture</a>
+      <a href="#panel">Floating Panels</a>
+      <a href="#menubar">Menu Bar</a>
+      <a href="#settings">Settings</a>
+      <a href="#tips">Tips &amp; FAQ</a>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2><span class="num">01</span>Getting Started</h2>
+    <p class="muted">Three steps from first launch to your first capture.</p>
+
+    <div class="flow">
+      <span class="step">1. Launch the app</span><span class="arrow">→</span>
+      <span class="step">2. Allow Screen Recording</span><span class="arrow">→</span>
+      <span class="step">3. Capture with <kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>C</kbd></span>
+    </div>
+
+    <h3>Install</h3>
+    <p>Download <code>HoldImg.app.zip</code> from
+       <a href="https://github.com/jaymunsh/hold-img/releases">GitHub Releases</a>,
+       unzip it, and move the app to <code>/Applications</code>.</p>
+    <div class="callout warn">Because the app ships without an Apple Developer
+      signature, Gatekeeper may warn about an "unidentified developer" on first
+      launch. <b>Right-click → Open</b> once to get past it, or run
+      <code>xattr -d com.apple.quarantine /Applications/HoldImg.app</code> in Terminal.</div>
+
+    <h3>Screen Recording Permission (one-time)</h3>
+    <p>macOS requires your permission for any screen capture. The first time you
+       press <kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>C</kbd>, a permission prompt appears.</p>
+    <ol>
+      <li>Click <b>Open Settings</b> in the prompt (or go to System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording)</li>
+      <li>Turn on <b>HoldImg.app</b> in the list (authentication required). If it's not listed, add <code>/Applications/HoldImg.app</code> with the <b>+</b> button</li>
+      <li>Click <b>Quit &amp; Reopen</b> to apply</li>
+    </ol>
+    <div class="callout warn">This permission is needed for HoldImg to <b>see</b>
+      your screen. Captured images stay entirely on your Mac — nothing is sent
+      anywhere.</div>
+  </section>
+
+  <section id="concept">
+    <h2><span class="num">02</span>Core Concepts</h2>
+    <p>HoldImg shows each capture as an <b>independent window floating above
+       everything</b>. Think of each panel as a movable sticky note, not a static copy.</p>
+    <ul>
+      <li><b>Pin for reference</b> — keep a fragment of the screen beside you while you write or code</li>
+      <li><b>One click to copy</b> — click a panel and its image goes to the clipboard, ready to paste anywhere</li>
+      <li><b>Eyes only</b> — click-through mode lets the mouse pass straight through to the app below</li>
+      <li><b>History</b> — every capture is saved as a PNG and can be reopened from "Recent Captures"</li>
+    </ul>
+    <figure>
+      <img src="screenshots/panel.png" alt="A floating panel with its hover toolbar">
+      <figcaption>A floating panel — hover to reveal the toolbar at the top right</figcaption>
+    </figure>
+  </section>
+
+  <section id="hotkeys">
+    <h2><span class="num">03</span>Global Shortcuts</h2>
+    <p class="muted">They work from any app. Every shortcut can be remapped in Settings.</p>
+    <table>
+      <tr><th>Shortcut</th><th>Action</th><th>Details</th></tr>
+      <tr><td class="keys"><kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>C</kbd></td><td><b>Region capture</b></td>
+          <td>Freezes the screen; drag to select a region</td></tr>
+      <tr><td class="keys"><kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>W</kbd></td><td><b>Window capture</b></td>
+          <td>Hover to highlight a window; click to capture just that window</td></tr>
+      <tr><td class="keys"><kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>R</kbd></td><td><b>Recapture last region</b></td>
+          <td>Reshoots the previous region instantly, no overlay</td></tr>
+      <tr><td class="keys"><kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>V</kbd></td><td><b>Paste from clipboard</b></td>
+          <td>Floats whatever image is on the clipboard</td></tr>
+      <tr><td class="keys"><kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>H</kbd></td><td><b>Hide/show all panels</b></td>
+          <td>Tucks every panel away; press again to restore them in place</td></tr>
+      <tr><td class="keys"><kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>Z</kbd></td><td><b>Restore closed panel</b></td>
+          <td>Reopens the last closed panel at its original position — up to 10 deep</td></tr>
+    </table>
+  </section>
+
+  <section id="capture">
+    <h2><span class="num">04</span>Region Capture in Detail</h2>
+    <p>Pressing <kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>C</kbd> freezes every display at that
+       moment and enters selection mode. A selection can span multiple monitors,
+       and on Retina displays it's saved at <b>native pixel resolution (2x)</b>
+       so it stays sharp when zoomed.</p>
+    <figure>
+      <img src="screenshots/overlay.jpg" alt="Region selection in progress">
+      <figcaption>During selection — action hints and ratio chips at the top, dimensions on the selection</figcaption>
+    </figure>
+    <p class="muted">The hint bar at the top of the screen shows available actions:
+       <kbd>M</kbd> Loupe · <kbd>C</kbd> Copy color · <kbd>Esc</kbd> Cancel,
+       plus ratio chips <code>1. Free</code>–<code>6. Custom</code>.</p>
+
+    <h3>Aspect-ratio modes</h3>
+    <p>Press a number key while selecting to change the capture ratio. The current
+       mode is highlighted in the hint bar. Pressing a key <b>mid-drag</b> reshapes
+       the selection instantly while keeping the start point, so you can tap
+       through ratios to compare.</p>
+    <table>
+      <tr><th>Key</th><th>Ratio</th><th>Behavior</th></tr>
+      <tr><td class="keys"><kbd>1</kbd></td><td>Free</td><td>Default — drag any shape</td></tr>
+      <tr><td class="keys"><kbd>2</kbd></td><td>1:1</td><td rowspan="4">Automatically fits the ratio along your drag direction</td></tr>
+      <tr><td class="keys"><kbd>3</kbd></td><td>4:3</td></tr>
+      <tr><td class="keys"><kbd>4</kbd></td><td>16:9</td></tr>
+      <tr><td class="keys"><kbd>5</kbd></td><td>16:10</td></tr>
+    </table>
+
+    <h3>Fixed pixel size</h3>
+    <p>Press <kbd>6</kbd> to open a size field. Enter a pixel size like
+       <code>1920x1080</code>, hit <kbd>Return</kbd>, and a box of exactly that
+       size follows your cursor. <b>Click to capture instantly.</b></p>
+    <ul>
+      <li>Separators are flexible: <code>640x360</code>, <code>640 360</code>, and <code>640×360</code> all work</li>
+      <li>Values are logical points — on a Retina (2x) display, <code>640x360</code> saves as a 1280×720 PNG</li>
+    </ul>
+
+    <h3>Loupe &amp; color picker</h3>
+    <p>Press <kbd>M</kbd> to show a loupe magnifying the cursor area plus the
+       cursor pixel's HEX value (off by default; press again to hide).
+       <kbd>C</kbd> copies the cursor pixel's <b>HEX value (e.g. <code>#3B6FE0</code>)</b>
+       to the clipboard.</p>
+
+    <h3>Window capture</h3>
+    <p><kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>W</kbd> freezes the screen and highlights
+       whichever window you hover over. Click to capture just that window at
+       native resolution.</p>
+
+    <h3>Cancel</h3>
+    <p>Press <kbd>Esc</kbd> at any point to cancel the selection.</p>
+  </section>
+
+  <section id="panel">
+    <h2><span class="num">05</span>Floating Panel Controls</h2>
+    <p class="muted">Each capture appears as a thin, borderless window. Hover over it and use the controls below.</p>
+    <table>
+      <tr><th>Action</th><th>How</th></tr>
+      <tr><td><b>Move</b></td><td>Drag anywhere — auto-snaps to screen edges and other panels' edges/centers.
+          Arrow keys nudge 1pt, <kbd>⇧</kbd>+arrows nudge 10pt</td></tr>
+      <tr><td><b>Rotate/flip</b></td><td><kbd>R</kbd> rotate 90° CW · <kbd>⇧</kbd><kbd>R</kbd> CCW ·
+          <kbd>F</kbd> flip horizontal — applied to the image data itself, so copies and saves reflect it</td></tr>
+      <tr><td><b>Drag out as file</b></td><td>Right-click drag — drop into Finder, Slack, Mail, or any app as an image file</td></tr>
+      <tr><td><b>Resize</b></td><td>Scroll = zoom at cursor · drag corners/edges = resize (aspect ratio locked by default — unlock with <kbd>L</kbd> or the toolbar 🔒 for freeform).
+          A dimension badge (e.g. <code>800 × 600</code>) appears at the bottom while resizing — it's not part of the image</td></tr>
+      <tr><td><b>Collapse/restore</b></td><td>Double-click — folds into a thumbnail; double-click again to restore</td></tr>
+      <tr><td><b>Copy image</b></td><td>Click or <kbd>⌘</kbd><kbd>C</kbd> — paste straight into other apps</td></tr>
+      <tr><td><b>Save to file</b></td><td><kbd>⌘</kbd><kbd>S</kbd> — PNG or JPEG</td></tr>
+      <tr><td><b>Annotate</b></td><td><kbd>P</kbd> — annotation mode (pen · highlighter · arrow · rectangle · mosaic · text)</td></tr>
+      <tr><td><b>Extract text (OCR)</b></td><td>Toolbar OCR button or right-click menu — recognized text goes to the clipboard</td></tr>
+      <tr><td><b>Always on top</b></td><td><kbd>T</kbd> — pin above all windows</td></tr>
+      <tr><td><b>Click-through</b></td><td><kbd>G</kbd> — the panel stays visible but the mouse passes through</td></tr>
+      <tr><td><b>Opacity</b></td><td><kbd>⌥</kbd>+scroll — make the panel translucent</td></tr>
+      <tr><td><b>Close</b></td><td><kbd>⌘</kbd><kbd>W</kbd> or <kbd>Esc</kbd></td></tr>
+    </table>
+
+    <h3>Hover toolbar</h3>
+    <p>Hovering over a panel reveals a small toolbar at the top right:
+       <b>pen · copy · save · OCR · aspect lock · close</b> — common actions without
+       shortcuts. Aspect lock (🔒) is on by default; unlock it for freeform corner
+       drags. The OCR button recognizes text in the image and copies it to the
+       clipboard (beeps if no text is found).</p>
+
+    <h3>Annotation tools</h3>
+    <p>Press the toolbar's pen button or <kbd>P</kbd> to enter annotation mode.
+       Pick a tool from the front of the toolbar, then drag on the image.</p>
+    <figure>
+      <img src="screenshots/annotate.png" alt="Annotation mode — tool strip and a pen stroke">
+      <figcaption>Annotation mode — pick a tool and color in the top strip, then ✓ bakes it into the image</figcaption>
+    </figure>
+    <ul>
+      <li><b>Pen</b> — freehand drawing</li>
+      <li><b>Highlighter</b> — a wide translucent band along your drag path</li>
+      <li><b>Arrow</b> — an arrow pointing along your drag direction</li>
+      <li><b>Rectangle</b> — an area-highlight box</li>
+      <li><b>Mosaic</b> — pixelates the dragged region to hide sensitive info</li>
+      <li><b>Text</b> — an input field appears where you click; <kbd>Return</kbd> commits, <kbd>Esc</kbd> cancels</li>
+      <li><b>Colors</b> — red · yellow · green · blue</li>
+      <li><b>Undo</b> — <kbd>⌘</kbd><kbd>Z</kbd> or the undo button removes the last annotation</li>
+      <li><b>Clear all</b> — the trash button removes every annotation</li>
+      <li><b>Done</b> — ✓ bakes annotations into the image at native resolution, so copies and saves include them</li>
+      <li><b>Cancel</b> — <kbd>Esc</kbd> or <kbd>P</kbd> discards everything and exits annotation mode</li>
+    </ul>
+    <div class="callout">Annotations move with the image when you resize or zoom the panel.</div>
+
+    <h3>Right-click menu</h3>
+    <p>Right-clicking a panel opens a menu covering all of the above (copy · save ·
+       OCR · pen · always on top · click-through · opacity presets · rotate/flip ·
+       collapse · close). <b>Dragging</b> while holding the right button turns the
+       panel into a file — drop it on any app or the desktop and it lands as an image.</p>
+    <div class="callout">A click-through panel ignores the mouse entirely. To close
+      or move it, first use <b>Disable click-through on all</b> or <b>Close all
+      panels</b> from the menu bar menu.</div>
+  </section>
+
+  <section id="menubar">
+    <h2><span class="num">06</span>Menu Bar</h2>
+    <p>Click the HoldImg icon (frame-and-brackets) in the menu bar for access to everything.</p>
+    <figure class="inline">
+      <img src="screenshots/menubar.png" alt="The menu bar menu" style="max-width:260px">
+      <figcaption>The menu bar menu (shown in Korean UI)</figcaption>
+    </figure>
+    <ul>
+      <li><b>Region/window capture, recapture, paste</b> — same as the shortcuts; each item shows its current shortcut</li>
+      <li><b>Open Image File…</b> — floats JPG/PNG/GIF/TIFF/BMP/WebP files (use as a reference picture frame)</li>
+      <li><b>Recent Captures</b> — your capture history; click an entry to float it again. Clear all history from the bottom</li>
+      <li><b>Hide/show all panels</b> — tuck every panel away and restore it in place (<kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>H</kbd>)</li>
+      <li><b>Restore last closed panel</b> — brings back an accidentally closed panel at its original position, up to 10 deep (<kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>Z</kbd>)</li>
+      <li><b>Close all / disable click-through</b> — bulk management of floating panels</li>
+      <li><b>Settings · Shortcuts</b></li>
+    </ul>
+    <p class="muted">Capture history is stored as PNGs in
+      <code>~/Library/Application Support/HoldImg/History</code>.</p>
+  </section>
+
+  <section id="settings">
+    <h2><span class="num">07</span>Settings</h2>
+    <p>Menu bar → Settings… (<kbd>⌘</kbd><kbd>,</kbd>)</p>
+    <figure>
+      <img src="screenshots/settings.png" alt="HoldImg Settings window" style="max-width:440px">
+      <figcaption>Settings — the footer shows the app version and an update-log link to GitHub Releases</figcaption>
+    </figure>
+    <div class="grid2">
+      <div class="mini"><h4>Language</h4><p>System Default · 한국어 · English — the whole UI switches instantly.</p></div>
+      <div class="mini"><h4>Copy to clipboard on capture</h4><p>Puts the image on the clipboard the moment you capture. Enable it if you paste often.</p></div>
+      <div class="mini"><h4>New panels always on top</h4><p>New floating panels start pinned above everything.</p></div>
+      <div class="mini"><h4>Default save location</h4><p>Sets the folder that ⌘S save dialogs open to.</p></div>
+      <div class="mini"><h4>Recent captures kept</h4><p>How many captures to keep in history, from 1 to 50.</p></div>
+      <div class="mini"><h4>Remap shortcuts</h4><p>Assign any of the 6 global shortcuts to a combo you like.</p></div>
+      <div class="mini"><h4>Launch at login</h4><p>HoldImg sits in your menu bar as soon as your Mac starts.</p></div>
+      <div class="mini"><h4>Show Dock icon</h4><p>Keep it menu-bar-only or also show it in the Dock.</p></div>
+    </div>
+  </section>
+
+  <section id="tips">
+    <h2><span class="num">08</span>Tips &amp; FAQ</h2>
+
+    <h3>Great for…</h3>
+    <ul>
+      <li><b>Reference work</b> — pin a design mockup, error log, or data table beside your editor</li>
+      <li><b>Comparing</b> — recapture the same region with <kbd>Ctrl</kbd><kbd>⌥</kbd><kbd>R</kbd> to compare before/after side by side</li>
+      <li><b>Sharing</b> — capture → click the panel to copy → paste straight into chat, email, or docs</li>
+      <li><b>Text extraction</b> — capture a receipt, notice, or code snippet and hit the OCR button to get text</li>
+      <li><b>Redact + explain</b> — mosaic account numbers or personal info, then annotate with arrows and text before sharing</li>
+      <li><b>Heads-up display</b> — pin a metric region with click-through + always-on-top</li>
+      <li><b>Color work</b> — enable the loupe with <kbd>M</kbd> during capture and press <kbd>C</kbd> to grab a HEX value</li>
+    </ul>
+
+    <h3>FAQ</h3>
+    <p><b>Q. Capture does nothing but show a permission prompt</b><br>
+       Screen Recording permission is off. Follow the steps in Getting Started to allow HoldImg.</p>
+    <p><b>Q. The floating panel gets in the way of clicks</b><br>
+       Press <kbd>G</kbd> on it or enable click-through from the right-click menu.</p>
+    <p><b>Q. I can't move a click-through panel</b><br>
+       That's by design. Use menu bar → "Disable click-through on all" first.</p>
+    <p><b>Q. I want to reopen an old capture</b><br>
+       Menu bar → Recent Captures → click it. The file is also kept on disk.</p>
+    <p><b>Q. Where are captures saved?</b><br>
+       PNGs are stored automatically in <code>~/Library/Application Support/HoldImg/History</code>.
+       Use <kbd>⌘</kbd><kbd>S</kbd> to save a copy anywhere.</p>
+  </section>
+
+  <footer>
+    <a href="https://github.com/jaymunsh/hold-img">HoldImg on GitHub</a> ·
+    <a href="https://github.com/jaymunsh/hold-img/releases">Releases</a><br>
+    Swift · AppKit · ScreenCaptureKit
+  </footer>
+</div>
+
+<a class="toplink" href="#top" id="toplink" aria-label="Back to top">↑</a>
+<script>
+  const tl = document.getElementById('toplink');
+  addEventListener('scroll', () => tl.classList.toggle('show', scrollY > 600));
+</script>
+</body>
+</html>
