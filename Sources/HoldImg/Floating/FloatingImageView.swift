@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// move, resize, zoom, copy, annotation, and context-menu interactions.
 final class FloatingImageView: NSView {
     var image: NSImage {
-        didSet { needsDisplay = true }
+        didSet { invalidateComposite(); needsDisplay = true }
     }
 
     private enum ResizeZone {
@@ -49,7 +49,9 @@ final class FloatingImageView: NSView {
     private var dragFileURL: URL?
 
     private(set) var isPenMode = false
-    private var annotations: [Annotation] = []
+    private var annotations: [Annotation] = [] {
+        didSet { invalidateComposite() }
+    }
     private var activeStroke: [CGPoint]?
     private var dragAnchor: CGPoint?
     private var activeShape: Annotation.Shape?
@@ -89,11 +91,31 @@ final class FloatingImageView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Committed annotations composited with the image at view size —
+    /// invalidated on annotation/size/image change so repaint during a
+    /// drag doesn't re-render every stroke vector each frame.
+    private var compositeCache: NSImage?
+    private var compositeSize: CGSize = .zero
+
+    private func invalidateComposite() {
+        compositeCache = nil
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        image.draw(in: bounds)
-        for ann in annotations {
-            drawAnnotation(ann.shape, color: ann.color, widthNorm: ann.widthNorm)
+        if compositeCache == nil || compositeSize != bounds.size {
+            let size = bounds.size
+            let cached = NSImage(size: size, flipped: false) { rect in
+                self.image.draw(in: rect)
+                for ann in self.annotations {
+                    self.drawAnnotation(ann.shape, color: ann.color,
+                                        widthNorm: ann.widthNorm)
+                }
+                return true
+            }
+            compositeCache = cached
+            compositeSize = size
         }
+        compositeCache?.draw(in: bounds)
         if let pts = activeStroke {
             let shape: Annotation.Shape =
                 tool == .highlighter ? .highlight(pts) : .freehand(pts)
@@ -707,17 +729,17 @@ final class FloatingImageView: NSView {
     private func showContextMenu(with event: NSEvent) {
         guard let panel else { return }
         let menu = NSMenu()
-        let copyItem = menu.addItem(withTitle: "복사", action: #selector(copyAction), keyEquivalent: "c")
+        let copyItem = menu.addItem(withTitle: L10n.tr("복사"), action: #selector(copyAction), keyEquivalent: "c")
         copyItem.keyEquivalentModifierMask = .command
-        let saveItem = menu.addItem(withTitle: "다른 이름으로 저장…", action: #selector(saveAction), keyEquivalent: "s")
+        let saveItem = menu.addItem(withTitle: L10n.tr("다른 이름으로 저장…"), action: #selector(saveAction), keyEquivalent: "s")
         saveItem.keyEquivalentModifierMask = .command
-        menu.addItem(withTitle: "텍스트 추출 (OCR)", action: #selector(ocrAction), keyEquivalent: "")
-        menu.addItem(withTitle: "펜으로 표시", action: #selector(penAction), keyEquivalent: "p")
+        menu.addItem(withTitle: L10n.tr("텍스트 추출 (OCR)"), action: #selector(ocrAction), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.tr("펜으로 표시"), action: #selector(penAction), keyEquivalent: "p")
         menu.addItem(.separator())
 
-        let topItem = menu.addItem(withTitle: "항상 위에 표시", action: #selector(toggleAlwaysOnTop), keyEquivalent: "t")
+        let topItem = menu.addItem(withTitle: L10n.tr("항상 위에 표시"), action: #selector(toggleAlwaysOnTop), keyEquivalent: "t")
         topItem.state = panel.alwaysOnTop ? .on : .off
-        let ghostItem = menu.addItem(withTitle: "클릭-스루 모드", action: #selector(toggleClickThrough), keyEquivalent: "g")
+        let ghostItem = menu.addItem(withTitle: L10n.tr("클릭-스루 모드"), action: #selector(toggleClickThrough), keyEquivalent: "g")
         ghostItem.state = panel.clickThrough ? .on : .off
 
         let opacityMenu = NSMenu()
@@ -730,15 +752,15 @@ final class FloatingImageView: NSView {
             item.tag = Int(value * 100)
             item.state = abs(panel.alphaValue - value) < 0.01 ? .on : .off
         }
-        let opacityItem = menu.addItem(withTitle: "투명도", action: nil, keyEquivalent: "")
+        let opacityItem = menu.addItem(withTitle: L10n.tr("투명도"), action: nil, keyEquivalent: "")
         menu.setSubmenu(opacityMenu, for: opacityItem)
         menu.addItem(.separator())
 
-        menu.addItem(withTitle: "오른쪽으로 회전", action: #selector(rotateAction), keyEquivalent: "r")
-        menu.addItem(withTitle: "왼쪽으로 회전", action: #selector(rotateCCWAction), keyEquivalent: "R")
-        menu.addItem(withTitle: "좌우 반전", action: #selector(flipAction), keyEquivalent: "f")
-        menu.addItem(withTitle: "축소/복원", action: #selector(collapseAction), keyEquivalent: "")
-        let closeItem = menu.addItem(withTitle: "닫기", action: #selector(closeAction), keyEquivalent: "w")
+        menu.addItem(withTitle: L10n.tr("오른쪽으로 회전"), action: #selector(rotateAction), keyEquivalent: "r")
+        menu.addItem(withTitle: L10n.tr("왼쪽으로 회전"), action: #selector(rotateCCWAction), keyEquivalent: "R")
+        menu.addItem(withTitle: L10n.tr("좌우 반전"), action: #selector(flipAction), keyEquivalent: "f")
+        menu.addItem(withTitle: L10n.tr("축소/복원"), action: #selector(collapseAction), keyEquivalent: "")
+        let closeItem = menu.addItem(withTitle: L10n.tr("닫기"), action: #selector(closeAction), keyEquivalent: "w")
         closeItem.keyEquivalentModifierMask = .command
         menu.items.forEach { $0.target = self }
         menu.popUp(positioning: nil, at: convert(event.locationInWindow, from: nil), in: self)

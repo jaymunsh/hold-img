@@ -14,6 +14,21 @@ final class SettingsStore: ObservableObject {
         static let showDockIcon = "showDockIcon"
         static let historyLimit = "historyLimit"
         static let saveDirectory = "saveDirectory"
+        static let language = "language"
+    }
+
+    /// Posted when `language` changes so AppKit chrome (menus, window
+    /// titles) can rebuild; SwiftUI views refresh via @Published.
+    static let languageDidChange =
+        Notification.Name("HoldImgLanguageDidChange")
+
+    /// "system" | "ko" | "en"
+    @Published var language: String {
+        didSet {
+            defaults.set(language, forKey: Key.language)
+            NotificationCenter.default.post(
+                name: SettingsStore.languageDidChange, object: nil)
+        }
     }
 
     @Published var autoCopyOnCapture: Bool {
@@ -59,6 +74,7 @@ final class SettingsStore: ObservableObject {
         showDockIcon = defaults.bool(forKey: Key.showDockIcon)
         historyLimit = max(1, defaults.integer(forKey: Key.historyLimit))
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        language = defaults.string(forKey: Key.language) ?? "system"
         if let path = defaults.string(forKey: Key.saveDirectory), !path.isEmpty {
             saveDirectory = URL(fileURLWithPath: path)
         } else {

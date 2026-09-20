@@ -1,0 +1,121 @@
+/* HoldImg English localization.
+   Keys are the Korean source strings used with L10n.tr(). */
+
+/* Menu bar */
+"영역 캡처" = "Capture Region";
+"윈도우 캡처" = "Capture Window";
+"마지막 영역 재캡처" = "Recapture Last Region";
+"클립보드 이미지 붙여넣기" = "Float Clipboard Image";
+"이미지 파일 열기…" = "Open Image Files…";
+"최근 캡처" = "Recent Captures";
+"없음" = "None";
+"기록 전체 삭제" = "Clear All History";
+"마지막으로 닫은 창 복원" = "Reopen Last Closed Panel";
+"모든 창 숨기기" = "Hide All Panels";
+"모든 창 보이기" = "Show All Panels";
+"모든 창 닫기" = "Close All Panels";
+"모든 창 클릭-스루 해제" = "Disable Click-Through on All";
+"설정…" = "Settings…";
+"단축키 보기" = "View Shortcuts";
+"HoldImg 종료" = "Quit HoldImg";
+
+/* Settings window */
+"HoldImg 설정" = "HoldImg Settings";
+"캡처" = "Capture";
+"캡처 시 클립보드에도 복사" = "Also copy to clipboard on capture";
+"새 창을 항상 위에 표시" = "New panels always on top";
+"최근 캡처 보관: %d개" = "Recent captures kept: %d";
+"기본 저장 위치" = "Default save location";
+"마지막 사용 위치" = "Last used location";
+"변경…" = "Change…";
+"단축키" = "Shortcuts";
+"클립보드 붙여넣기" = "Paste Clipboard";
+"모든 창 숨기기/보이기" = "Hide/Show All Panels";
+"닫은 창 복원" = "Restore Closed Panel";
+"앱" = "App";
+"언어" = "Language";
+"시스템 기본" = "System Default";
+"로그인 시 자동 실행" = "Launch at login";
+"Dock 아이콘 표시" = "Show Dock icon";
+
+/* Shortcuts window */
+"미지정" = "Not set";
+"전역 단축키 (설정에서 변경 가능)" = "Global Shortcuts (customizable in Settings)";
+"플로팅 창 (포커스된 상태)" = "Floating Panels (while focused)";
+"클릭 — 이미지 복사" = "Click — copy image";
+"더블클릭 — 축소/복원" = "Double-click — collapse/restore";
+"우클릭 드래그 — 파일로 드롭" = "Right-drag — drop as file";
+"스크롤 — 크기 조절" = "Scroll — resize";
+"⌥스크롤 — 투명도 조절" = "⌥Scroll — adjust opacity";
+"모서리·가장자리 드래그 — 리사이즈" = "Drag corners/edges — resize";
+"비율 잠금 토글" = "Toggle aspect lock";
+"복사" = "Copy";
+"다른 이름으로 저장" = "Save As";
+"주석 모드 (펜·형광펜·화살표·사각형·모자이크·텍스트)" = "Annotate (pen · highlighter · arrow · rect · mosaic · text)";
+"회전 90° (시계/반시계)" = "Rotate 90° (CW/CCW)";
+"좌우 반전" = "Flip Horizontally";
+"미세 이동 (1pt / 10pt)" = "Nudge (1pt / 10pt)";
+"방향키 / ⇧방향키" = "Arrow keys / ⇧Arrow";
+"항상 위 토글" = "Toggle always on top";
+"클릭-스루 토글" = "Toggle click-through";
+"닫기" = "Close";
+"주석 모드" = "Annotate";
+"주석 되돌리기" = "Undo annotation";
+"텍스트 확정 / 취소" = "Confirm / cancel text";
+"완료(이미지에 적용) / 취소" = "Done (bake into image) / Cancel";
+"캡처 화면" = "Capture Screen";
+"픽셀 컬러 복사" = "Copy pixel color";
+"돋보기 토글" = "Toggle loupe";
+"비율/크기 선택" = "Aspect/size selection";
+"취소" = "Cancel";
+
+/* Capture overlay */
+"자유" = "Free";
+"클릭 — 캡처할 윈도우 선택" = "Click — choose a window to capture";
+"클릭으로 %@ 캡처" = "Click to capture %@";
+"드래그로 영역 선택" = "Drag to select a region";
+"돋보기" = "Loupe";
+"컬러 복사" = "Copy color";
+"크기 변경" = "Change size";
+"해제" = "Release";
+"비율" = "Ratio";
+"1. 자유" = "1. Free";
+"6. 직접입력" = "6. Custom";
+"%@ 복사됨" = "%@ copied";
+
+/* Floating panel — toolbar tooltips & context menu */
+"펜으로 표시 (P)" = "Annotate (P)";
+"펜으로 표시" = "Annotate";
+"복사 (⌘C)" = "Copy (⌘C)";
+"다른 이름으로 저장 (⌘S)" = "Save As (⌘S)";
+"다른 이름으로 저장…" = "Save As…";
+"텍스트 추출 (OCR) — 클립보드로 복사" = "Extract text (OCR) — copy to clipboard";
+"텍스트 추출 (OCR)" = "Extract Text (OCR)";
+"비율 잠금 — 해제 시 자유 리사이즈" = "Aspect lock — unlock for free resize";
+"닫기 (⌘W/Esc)" = "Close (⌘W/Esc)";
+"되돌리기 (⌘Z)" = "Undo (⌘Z)";
+"전체 지우기" = "Clear All";
+"완료 — 이미지에 적용" = "Done — apply to image";
+"펜 — 자유곡선" = "Pen — freehand";
+"형광펜 — 반투명 강조" = "Highlighter — translucent mark";
+"화살표" = "Arrow";
+"사각형" = "Rectangle";
+"모자이크" = "Mosaic";
+"텍스트" = "Text";
+"색상" = "Color";
+"항상 위에 표시" = "Always on Top";
+"클릭-스루 모드" = "Click-Through Mode";
+"투명도" = "Opacity";
+"오른쪽으로 회전" = "Rotate Right";
+"왼쪽으로 회전" = "Rotate Left";
+"축소/복원" = "Collapse/Restore";
+
+/* Alerts */
+"화면 기록 권한이 필요합니다" = "Screen Recording Permission Required";
+"시스템 설정 → 개인정보 보호 및 보안 → 화면 기록에서 HoldImg를 허용해주세요. 허용 후 다시 시도하면 됩니다." = "Allow HoldImg in System Settings → Privacy & Security → Screen Recording, then try again.";
+"설정 열기" = "Open Settings";
+"캡처에 실패했습니다" = "Capture Failed";
+
+/* Settings footer */
+"버전 %@" = "Version %@";
+"업데이트 로그 ↗" = "Release Notes ↗";

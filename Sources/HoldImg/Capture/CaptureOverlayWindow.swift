@@ -72,7 +72,7 @@ final class CaptureOverlayView: NSView {
     private var aspectLock: CGFloat?
     /// Exact-size capture box that follows the cursor until clicked.
     private var fixedSize: CGSize?
-    private var constraintLabel = "자유"
+    private var constraintLabel = L10n.tr("자유")
     private var sizeField: NSTextField?
 
     init(frame: NSRect,
@@ -213,7 +213,7 @@ final class CaptureOverlayView: NSView {
         // turn letter keys into jamo and silently break the shortcuts.
         if mode == .region {
             switch event.keyCode {
-            case 18: setConstraint(nil, nil, "자유")
+            case 18: setConstraint(nil, nil, L10n.tr("자유"))
             case 19: setConstraint(1, nil, "1:1")
             case 20: setConstraint(4.0 / 3.0, nil, "4:3")
             case 21: setConstraint(16.0 / 9.0, nil, "16:9")
@@ -316,30 +316,30 @@ final class CaptureOverlayView: NSView {
         var ratioRow: [HintItem]?
         switch mode {
         case .window:
-            actionRow = [.text("클릭 — 캡처할 윈도우 선택"), .divider,
-                         .key("Esc"), .text("취소")]
+            actionRow = [.text(L10n.tr("클릭 — 캡처할 윈도우 선택")), .divider,
+                         .key("Esc"), .text(L10n.tr("취소"))]
         case .region:
             if fixedSize != nil {
-                actionRow = [.text("클릭으로 \(constraintLabel) 캡처"), .divider,
-                             .key("M"), .text("돋보기"), .gap(8),
-                             .key("6"), .text("크기 변경"), .gap(8),
-                             .key("1"), .text("해제"), .gap(8),
-                             .key("Esc"), .text("취소")]
+                actionRow = [.text(L10n.tr("클릭으로 %@ 캡처", constraintLabel)), .divider,
+                             .key("M"), .text(L10n.tr("돋보기")), .gap(8),
+                             .key("6"), .text(L10n.tr("크기 변경")), .gap(8),
+                             .key("1"), .text(L10n.tr("해제")), .gap(8),
+                             .key("Esc"), .text(L10n.tr("취소"))]
             } else {
-                actionRow = [.text("드래그로 영역 선택"), .divider,
-                             .key("M"), .text("돋보기"), .gap(8),
-                             .key("C"), .text("컬러 복사"), .gap(8),
-                             .key("Esc"), .text("취소")]
+                actionRow = [.text(L10n.tr("드래그로 영역 선택")), .divider,
+                             .key("M"), .text(L10n.tr("돋보기")), .gap(8),
+                             .key("C"), .text(L10n.tr("컬러 복사")), .gap(8),
+                             .key("Esc"), .text(L10n.tr("취소"))]
             }
             let ratios: [(String, Bool)] = [
-                ("1. 자유",   aspectLock == nil && fixedSize == nil),
+                (L10n.tr("1. 자유"),   aspectLock == nil && fixedSize == nil),
                 ("2. 1:1",    aspectLock == 1),
                 ("3. 4:3",    aspectLock == 4.0 / 3.0),
                 ("4. 16:9",   aspectLock == 16.0 / 9.0),
                 ("5. 16:10",  aspectLock == 1.6),
-                ("6. 직접입력", fixedSize != nil),
+                (L10n.tr("6. 직접입력"), fixedSize != nil),
             ]
-            ratioRow = [.text("비율"), .gap(4)]
+            ratioRow = [.text(L10n.tr("비율")), .gap(4)]
                 + ratios.map { HintItem.key($0.0, active: $0.1) }
         }
 
@@ -436,7 +436,7 @@ final class CaptureOverlayView: NSView {
         if let color = colorAtViewPoint(point) {
             let hex = color.hexString
             let isFlash = copiedFlashUntil.map { $0 > Date() } ?? false
-            drawLabel(isFlash ? "\(hex) 복사됨" : hex,
+            drawLabel(isFlash ? L10n.tr("%@ 복사됨", hex) : hex,
                       near: CGPoint(x: loupeRect.midX, y: loupeRect.minY - 26))
         }
     }

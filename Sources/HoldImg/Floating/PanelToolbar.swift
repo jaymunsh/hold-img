@@ -24,6 +24,9 @@ final class PanelToolbar: NSVisualEffectView {
         ("square.grid.3x3", "모자이크"),
         ("textformat", "텍스트"),
     ]
+    private static func toolTip(at index: Int) -> String {
+        L10n.tr(toolButtons[index].tip)
+    }
 
     /// Size of the button stack, including insets — reliable right after
     /// rebuild(), unlike NSVisualEffectView.fittingSize.
@@ -146,17 +149,17 @@ final class PanelToolbar: NSVisualEffectView {
         }
         switch mode {
         case .normal:
-            addButton(symbol: "pencil.tip", tag: 1, tip: "펜으로 표시 (P)")
-            addButton(symbol: "doc.on.doc", tag: 2, tip: "복사 (⌘C)")
-            addButton(symbol: "square.and.arrow.down", tag: 3, tip: "다른 이름으로 저장 (⌘S)")
-            addButton(symbol: "text.viewfinder", tag: 9, tip: "텍스트 추출 (OCR) — 클립보드로 복사")
+            addButton(symbol: "pencil.tip", tag: 1, tip: L10n.tr("펜으로 표시 (P)"))
+            addButton(symbol: "doc.on.doc", tag: 2, tip: L10n.tr("복사 (⌘C)"))
+            addButton(symbol: "square.and.arrow.down", tag: 3, tip: L10n.tr("다른 이름으로 저장 (⌘S)"))
+            addButton(symbol: "text.viewfinder", tag: 9, tip: L10n.tr("텍스트 추출 (OCR) — 클립보드로 복사"))
             addButton(symbol: aspectLocked ? "lock.fill" : "lock.open.fill",
-                      tag: 8, tip: "비율 잠금 — 해제 시 자유 리사이즈",
+                      tag: 8, tip: L10n.tr("비율 잠금 — 해제 시 자유 리사이즈"),
                       tint: aspectLocked ? nil : .controlAccentColor)
-            addButton(symbol: "xmark", tag: 4, tip: "닫기 (⌘W/Esc)")
+            addButton(symbol: "xmark", tag: 4, tip: L10n.tr("닫기 (⌘W/Esc)"))
         case .pen:
             for (i, spec) in Self.toolButtons.enumerated() {
-                addButton(symbol: spec.symbol, tag: 200 + i, tip: spec.tip,
+                addButton(symbol: spec.symbol, tag: 200 + i, tip: Self.toolTip(at: i),
                           tint: i == toolIndex ? .controlAccentColor : nil)
             }
             addSeparator()
@@ -164,9 +167,9 @@ final class PanelToolbar: NSVisualEffectView {
                 addColorButton(index: i, color: color)
             }
             addSeparator()
-            addButton(symbol: "arrow.uturn.left", tag: 5, tip: "되돌리기 (⌘Z)")
-            addButton(symbol: "trash", tag: 6, tip: "전체 지우기")
-            addButton(symbol: "checkmark", tag: 7, tip: "완료 — 이미지에 적용")
+            addButton(symbol: "arrow.uturn.left", tag: 5, tip: L10n.tr("되돌리기 (⌘Z)"))
+            addButton(symbol: "trash", tag: 6, tip: L10n.tr("전체 지우기"))
+            addButton(symbol: "checkmark", tag: 7, tip: L10n.tr("완료 — 이미지에 적용"))
         }
         // Keep the top-right corner anchored as the capsule resizes.
         // Use the stack's fitting size — the effect view's fittingSize can
@@ -204,7 +207,7 @@ final class PanelToolbar: NSVisualEffectView {
         let button = NSButton()
         button.isBordered = false
         let symbol = index == colorIndex ? "circle.inset.filled" : "circle.fill"
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "색상")
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: L10n.tr("색상"))
         button.imageScaling = .scaleProportionallyDown
         button.contentTintColor = color
         button.target = self

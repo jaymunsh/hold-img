@@ -200,11 +200,11 @@ final class CaptureCoordinator {
     private func showPermissionAlert() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "화면 기록 권한이 필요합니다"
-        alert.informativeText = "시스템 설정 → 개인정보 보호 및 보안 → 화면 기록에서 HoldImg를 허용해주세요. 허용 후 다시 시도하면 됩니다."
+        alert.messageText = L10n.tr("화면 기록 권한이 필요합니다")
+        alert.informativeText = L10n.tr("시스템 설정 → 개인정보 보호 및 보안 → 화면 기록에서 HoldImg를 허용해주세요. 허용 후 다시 시도하면 됩니다.")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "설정 열기")
-        alert.addButton(withTitle: "취소")
+        alert.addButton(withTitle: L10n.tr("설정 열기"))
+        alert.addButton(withTitle: L10n.tr("취소"))
         if alert.runModal() == .alertFirstButtonReturn,
            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
@@ -214,7 +214,7 @@ final class CaptureCoordinator {
     private func showCaptureError(_ error: Error) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert(error: error)
-        alert.messageText = "캡처에 실패했습니다"
+        alert.messageText = L10n.tr("캡처에 실패했습니다")
         alert.runModal()
     }
 }

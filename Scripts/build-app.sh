@@ -16,7 +16,8 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_PATH" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$ROOT/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
-find "$ROOT/Resources" -type f ! -name 'Info.plist' -exec cp {} "$APP_DIR/Contents/Resources/" \;
+# Preserve .lproj directory structure for localizations.
+rsync -a --exclude 'Info.plist' "$ROOT/Resources/" "$APP_DIR/Contents/Resources/"
 
 # Sign with a stable dev identity when available so TCC grants survive rebuilds
 # (ad-hoc signatures are cdhash-based and invalidate TCC on every rebuild).

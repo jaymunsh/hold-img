@@ -14,38 +14,47 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     override init() {
         super.init()
         item.button?.image = Self.menuBarImage()
+        rebuildMenu()
+        NotificationCenter.default.addObserver(
+            forName: SettingsStore.languageDidChange,
+            object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.rebuildMenu() }
+        }
+    }
+
+    private func rebuildMenu() {
         let menu = NSMenu()
         menu.delegate = self
 
-        addAction(menu, "영역 캡처", .captureRegion, #selector(captureRegion))
-        addAction(menu, "윈도우 캡처", .captureWindow, #selector(captureWindow))
-        addAction(menu, "마지막 영역 재캡처", .recaptureRegion, #selector(recapture))
-        addAction(menu, "클립보드 이미지 붙여넣기", .pasteFloat, #selector(pasteFloat))
-        menu.addItem(action("이미지 파일 열기…", #selector(openFiles)))
+        addAction(menu, L10n.tr("영역 캡처"), .captureRegion, #selector(captureRegion))
+        addAction(menu, L10n.tr("윈도우 캡처"), .captureWindow, #selector(captureWindow))
+        addAction(menu, L10n.tr("마지막 영역 재캡처"), .recaptureRegion, #selector(recapture))
+        addAction(menu, L10n.tr("클립보드 이미지 붙여넣기"), .pasteFloat, #selector(pasteFloat))
+        menu.addItem(action(L10n.tr("이미지 파일 열기…"), #selector(openFiles)))
         menu.addItem(.separator())
 
-        let recent = NSMenuItem(title: "최근 캡처", action: nil, keyEquivalent: "")
+        let recent = NSMenuItem(title: L10n.tr("최근 캡처"), action: nil, keyEquivalent: "")
         recent.submenu = NSMenu()
         menu.addItem(recent)
         recentMenuItem = recent
         menu.addItem(.separator())
 
-        let reopen = action("마지막으로 닫은 창 복원", #selector(reopenClosed))
+        let reopen = action(L10n.tr("마지막으로 닫은 창 복원"), #selector(reopenClosed))
         reopen.setShortcut(for: .reopenClosed)
         menu.addItem(reopen)
         reopenMenuItem = reopen
-        let hide = action("모든 창 숨기기", #selector(toggleHidden))
+        let hide = action(L10n.tr("모든 창 숨기기"), #selector(toggleHidden))
         hide.setShortcut(for: .toggleHidden)
         menu.addItem(hide)
         hideMenuItem = hide
-        menu.addItem(action("모든 창 닫기", #selector(closeAll)))
-        menu.addItem(action("모든 창 클릭-스루 해제", #selector(disableClickThrough)))
+        menu.addItem(action(L10n.tr("모든 창 닫기"), #selector(closeAll)))
+        menu.addItem(action(L10n.tr("모든 창 클릭-스루 해제"), #selector(disableClickThrough)))
         menu.addItem(.separator())
 
-        menu.addItem(action("설정…", #selector(openSettings), keyEquivalent: ","))
-        menu.addItem(action("단축키 보기", #selector(showShortcuts)))
+        menu.addItem(action(L10n.tr("설정…"), #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(action(L10n.tr("단축키 보기"), #selector(showShortcuts)))
         menu.addItem(.separator())
-        menu.addItem(action("HoldImg 종료", #selector(quit), keyEquivalent: "q"))
+        menu.addItem(action(L10n.tr("HoldImg 종료"), #selector(quit), keyEquivalent: "q"))
 
         item.menu = menu
     }
@@ -94,7 +103,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         rebuildRecentSubmenu()
         hideMenuItem?.title = FloatingWindowManager.shared.allHidden
-            ? "모든 창 보이기" : "모든 창 숨기기"
+            ? L10n.tr("모든 창 보이기") : L10n.tr("모든 창 숨기기")
         reopenMenuItem?.isEnabled = FloatingWindowManager.shared.canReopen
     }
 
@@ -103,7 +112,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         submenu.removeAllItems()
         let entries = CaptureHistoryStore.shared.entries()
         if entries.isEmpty {
-            let empty = NSMenuItem(title: "없음", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: L10n.tr("없음"), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             submenu.addItem(empty)
         } else {
@@ -126,7 +135,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 submenu.addItem(menuItem)
             }
             submenu.addItem(.separator())
-            let clear = NSMenuItem(title: "기록 전체 삭제",
+            let clear = NSMenuItem(title: L10n.tr("기록 전체 삭제"),
                                    action: #selector(clearHistory),
                                    keyEquivalent: "")
             clear.target = self
