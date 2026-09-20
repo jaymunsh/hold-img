@@ -76,6 +76,7 @@ struct ShortcutsView: View {
                 row(L10n.tr("닫기"), "⌘W / Esc")
             }
             Section(L10n.tr("주석 모드")) {
+                row(L10n.tr("형광펜 직선 (수평/수직)"), "⇧+드래그")
                 row(L10n.tr("주석 되돌리기"), "⌘Z")
                 row(L10n.tr("텍스트 확정 / 취소"), "Return / Esc")
                 row(L10n.tr("완료(이미지에 적용) / 취소"), "✓ / Esc·P")

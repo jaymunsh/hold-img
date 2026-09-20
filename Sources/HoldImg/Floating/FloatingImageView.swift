@@ -23,7 +23,7 @@ final class FloatingImageView: NSView {
             case arrow(from: CGPoint, to: CGPoint)
             case rect(CGRect)
             case mosaic(CGRect)
-            case text(String, CGPoint)
+            case text(String, CGPoint, fontNorm: CGFloat)
         }
         var shape: Shape
         var color: NSColor
@@ -31,7 +31,7 @@ final class FloatingImageView: NSView {
     }
 
     enum AnnotationTool: Int {
-        case pen, highlighter, arrow, rect, mosaic, text
+        case pen, highlighter, arrow, rect, mosaic, text, move
     }
 
     private var dragStartGlobal: CGPoint = .zero
@@ -53,26 +53,49 @@ final class FloatingImageView: NSView {
         didSet { invalidateComposite() }
     }
     private var activeStroke: [CGPoint]?
+    /// Shift+drag axis constraint for the highlighter: nil = undecided,
+    /// true = horizontal, false = vertical. Locked on first >4pt movement.
+    private var strokeAxisLock: Bool?
     private var dragAnchor: CGPoint?
     private var activeShape: Annotation.Shape?
-    private var tool: AnnotationTool = .pen
-    private var textField: NSTextField?
+    /// Text annotation being repositioned: its index and the grab offset
+    /// (view coords) between the click point and the text's anchor.
+    private var draggingTextIndex: Int?
+    private var textDragOffset: CGSize = .zero
+    /// Move tool: the annotation being dragged is excluded from the
+    /// composite once, then previewed via activeShape until mouse-up.
+    private var movingIndex: Int?
+    private var moveExcludedIndex: Int?
+    private var moveOrigin: Annotation.Shape?
+    private var moveStart: CGPoint = .zero
+    /// Bounds of the grabbed shape, so a move drag doesn't re-walk every
+    /// stroke point per frame — the preview bounds is just this + delta.
+    private var moveOriginBounds: CGRect = .null
+    private(set) var tool: AnnotationTool = .pen
+    private var textEditor: AnnotationTextView?
+    /// Top-left anchor (view coords) of the open text editor.
+    private var textAnchor: CGPoint = .zero
     private var penColorIndex = 0
     private var hoverTracking: NSTrackingArea?
 
     /// Transient size readout shown while resizing/zooming (overlay only —
-    /// never baked into the image).
-    private lazy var sizeBadge: NSTextField = {
+    /// never baked into the image). The container carries the pill styling
+    /// so the label can be centered inside it exactly.
+    private lazy var sizeBadge: NSView = {
+        let v = NSView()
+        v.wantsLayer = true
+        v.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        v.layer?.cornerRadius = 6
+        v.alphaValue = 0
+        v.isHidden = true
+        addSubview(v)
+        return v
+    }()
+    private lazy var sizeBadgeLabel: NSTextField = {
         let label = NSTextField(labelWithString: "")
         label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         label.textColor = .white
         label.alignment = .center
-        label.wantsLayer = true
-        label.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
-        label.layer?.cornerRadius = 6
-        label.alphaValue = 0
-        label.isHidden = true
-        addSubview(label)
         return label
     }()
     private var sizeBadgeTimer: Timer?
@@ -96,24 +119,56 @@ final class FloatingImageView: NSView {
     /// drag doesn't re-render every stroke vector each frame.
     private var compositeCache: NSImage?
     private var compositeSize: CGSize = .zero
+    /// True while a resize/zoom gesture is in flight — the stale composite
+    /// is drawn scaled instead of re-rendered at the new size every frame,
+    /// then rebuilt once the gesture settles.
+    private var isLiveResizing = false
+    private var resizeSettleTimer: Timer?
 
     private func invalidateComposite() {
         compositeCache = nil
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        if compositeCache == nil || compositeSize != bounds.size {
-            let size = bounds.size
-            let cached = NSImage(size: size, flipped: false) { rect in
-                self.image.draw(in: rect)
-                for ann in self.annotations {
-                    self.drawAnnotation(ann.shape, color: ann.color,
-                                        widthNorm: ann.widthNorm)
-                }
-                return true
+    private func rebuildComposite() {
+        let size = bounds.size
+        let cached = NSImage(size: size, flipped: false) { rect in
+            self.image.draw(in: rect)
+            for (i, ann) in self.annotations.enumerated()
+            where i != self.moveExcludedIndex {
+                self.drawAnnotation(ann.shape, color: ann.color,
+                                    widthNorm: ann.widthNorm)
             }
-            compositeCache = cached
-            compositeSize = size
+            return true
+        }
+        compositeCache = cached
+        compositeSize = size
+    }
+
+    /// Marks a live resize/zoom frame: skip the cache rebuild and just
+    /// scale the previous composite until the gesture ends.
+    private func beginLiveResize() {
+        isLiveResizing = true
+        resizeSettleTimer?.invalidate()
+        resizeSettleTimer = Timer.scheduledTimer(withTimeInterval: 0.2,
+                                               repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.endLiveResize()
+            }
+        }
+    }
+
+    private func endLiveResize() {
+        guard isLiveResizing else { return }
+        isLiveResizing = false
+        resizeSettleTimer?.invalidate()
+        resizeSettleTimer = nil
+        invalidateComposite()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if compositeCache == nil || (compositeSize != bounds.size && !isLiveResizing) {
+            rebuildComposite()
         }
         compositeCache?.draw(in: bounds)
         if let pts = activeStroke {
@@ -122,7 +177,14 @@ final class FloatingImageView: NSView {
             drawAnnotation(shape, color: penColor, widthNorm: currentWidthNorm)
         }
         if let shape = activeShape {
-            drawAnnotation(shape, color: penColor, widthNorm: strokeWidthNorm)
+            if let mi = movingIndex, mi < annotations.count {
+                let ann = annotations[mi]
+                drawAnnotation(shape, color: ann.color,
+                               widthNorm: ann.widthNorm)
+            } else {
+                drawAnnotation(shape, color: penColor,
+                               widthNorm: strokeWidthNorm)
+            }
         }
     }
 
@@ -130,10 +192,13 @@ final class FloatingImageView: NSView {
     private var strokeWidthNorm: CGFloat { 3.0 / max(bounds.height, 1) }
     /// Highlighter band: screen-fixed ~20pt like the pen's 3pt.
     private var highlightWidthNorm: CGFloat { 20.0 / max(bounds.height, 1) }
+    /// Shared by the live draw and the bake pass so both render identically.
+    private let highlightAlpha: CGFloat = 0.25
     private var currentWidthNorm: CGFloat {
         tool == .highlighter ? highlightWidthNorm : strokeWidthNorm
     }
-    private var textFontNorm: CGFloat { 0.05 }
+    /// Text annotation size, adjustable with ⌘+/⌘- — stored per annotation.
+    private(set) var textSizeNorm: CGFloat = 0.05
 
     private func drawAnnotation(_ shape: Annotation.Shape,
                                 color: NSColor, widthNorm: CGFloat) {
@@ -153,7 +218,7 @@ final class FloatingImageView: NSView {
         case .highlight(let points):
             // Marker stroke: translucent, wide, flat ends — reads as a
             // rectangular band along the drag path.
-            color.withAlphaComponent(0.35).setStroke()
+            color.withAlphaComponent(highlightAlpha).setStroke()
             let path = NSBezierPath()
             path.lineWidth = lw
             path.lineCapStyle = .butt
@@ -178,14 +243,28 @@ final class FloatingImageView: NSView {
             path.stroke()
         case .mosaic(let r):
             drawMosaic(in: denormalizeRect(r))
-        case .text(let s, let p):
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: textFontNorm * bounds.height,
-                                         weight: .bold),
-                .foregroundColor: color,
-            ]
-            NSAttributedString(string: s, attributes: attrs)
-                .draw(at: denormalize(p))
+        case .text(let s, let p, let fontNorm):
+            // CoreText, same as the bake path: NSStringDrawing's draw(at:)
+            // renders mirrored in this context. The anchor is the text's
+            // top-left; each line's baseline sits one ascender below the
+            // previous line's top.
+            let font = NSFont.systemFont(ofSize: fontNorm * bounds.height,
+                                         weight: .bold)
+            let v = denormalize(p)
+            let ctx = NSGraphicsContext.current!.cgContext
+            ctx.saveGState()
+            let lineHeight = font.ascender - font.descender + font.leading
+            for (i, sLine) in s.components(separatedBy: "\n").enumerated() {
+                let attrStr = NSAttributedString(string: sLine, attributes: [
+                    .font: font,
+                    .foregroundColor: color,
+                ])
+                let line = CTLineCreateWithAttributedString(attrStr)
+                ctx.textPosition = CGPoint(
+                    x: v.x, y: v.y - font.ascender - CGFloat(i) * lineHeight)
+                CTLineDraw(line, ctx)
+            }
+            ctx.restoreGState()
         }
     }
 
@@ -263,18 +342,33 @@ final class FloatingImageView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        panel?.hoverToolbar.show()
+        panel?.showHoverToolbar()
         // Nonactivating panel: this only takes key status inside this app,
         // so hovered panels can receive ⌘W/keys without stealing app focus.
         window?.makeKey()
     }
 
     override func mouseExited(with event: NSEvent) {
-        if !isPenMode { panel?.hoverToolbar.hide() }
+        panel?.hideHoverToolbar()
     }
 
     override func mouseMoved(with event: NSEvent) {
-        if isPenMode { NSCursor.crosshair.set() }
+        if !isPenMode {
+            // Sliding from an occluded spot into the open fires no new
+            // mouseEntered — re-show once the toolbar had been collapsed.
+            if let p = panel, p.hoverToolbar.isHidden {
+                p.showHoverToolbar()
+            }
+            return
+        }
+        let p = convert(event.locationInWindow, from: nil)
+        if tool == .move {
+            NSCursor.openHand.set()
+        } else if tool == .text, hitTestText(at: p) != nil {
+            NSCursor.openHand.set()
+        } else {
+            NSCursor.crosshair.set()
+        }
     }
 
     // MARK: - Annotation mode
@@ -294,6 +388,10 @@ final class FloatingImageView: NSView {
         activeStroke = nil
         activeShape = nil
         dragAnchor = nil
+        draggingTextIndex = nil
+        movingIndex = nil
+        moveExcludedIndex = nil
+        moveOrigin = nil
         isPenMode = false
         needsDisplay = true
     }
@@ -301,6 +399,7 @@ final class FloatingImageView: NSView {
     func selectTool(_ index: Int) {
         tool = AnnotationTool(rawValue: index) ?? .pen
         commitTextField()
+        draggingTextIndex = nil
         NSCursor.crosshair.set()
     }
 
@@ -308,6 +407,12 @@ final class FloatingImageView: NSView {
         if activeStroke != nil || activeShape != nil {
             activeStroke = nil
             activeShape = nil
+            if moveExcludedIndex != nil {
+                movingIndex = nil
+                moveExcludedIndex = nil
+                moveOrigin = nil
+                invalidateComposite()
+            }
         } else {
             _ = annotations.popLast()
         }
@@ -318,10 +423,14 @@ final class FloatingImageView: NSView {
         annotations.removeAll()
         activeStroke = nil
         activeShape = nil
+        movingIndex = nil
+        moveExcludedIndex = nil
+        moveOrigin = nil
         needsDisplay = true
     }
 
     func selectPenColor(_ index: Int) {
+        guard PanelToolbar.penColors.indices.contains(index) else { return }
         penColorIndex = index
     }
 
@@ -352,7 +461,7 @@ final class FloatingImageView: NSView {
             let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
                            width: abs(b.x - a.x), height: abs(b.y - a.y))
             return tool == .rect ? .rect(r) : .mosaic(r)
-        case .pen, .highlighter, .text:
+        case .pen, .highlighter, .text, .move:
             return .freehand([a, b])
         }
     }
@@ -369,26 +478,77 @@ final class FloatingImageView: NSView {
             return r
         case .arrow(let a, let b):
             let va = denormalize(a), vb = denormalize(b)
-            return CGRect(x: min(va.x, vb.x), y: min(va.y, vb.y),
-                          width: abs(vb.x - va.x), height: abs(vb.y - va.y))
+            var r = CGRect(x: min(va.x, vb.x), y: min(va.y, vb.y),
+                           width: abs(vb.x - va.x), height: abs(vb.y - va.y))
+            // Arrowhead tips stick out past the endpoint box — include them
+            // so preview invalidation doesn't leave specks behind.
+            let head = strokeWidthNorm * bounds.height * 5
+            let angle = atan2(vb.y - va.y, vb.x - va.x)
+            for side in [-1.0, 1.0] as [CGFloat] {
+                let a2 = angle + CGFloat.pi + side * (CGFloat.pi / 6)
+                let tip = CGPoint(x: vb.x + head * cos(a2),
+                                  y: vb.y + head * sin(a2))
+                r = r.union(CGRect(origin: tip, size: .zero))
+            }
+            return r
         case .rect(let r), .mosaic(let r):
             return denormalizeRect(r)
-        case .text(let s, let p):
-            let size = NSAttributedString(
-                string: s,
-                attributes: [.font: NSFont.systemFont(
-                    ofSize: textFontNorm * bounds.height, weight: .bold)]
-            ).size()
-            return CGRect(origin: denormalize(p), size: size)
+        case .text(let s, let p, let fontNorm):
+            let font = NSFont.systemFont(ofSize: fontNorm * bounds.height,
+                                         weight: .bold)
+            let lineHeight = font.ascender - font.descender + font.leading
+            let lines = s.components(separatedBy: "\n")
+            var w: CGFloat = 0
+            for sLine in lines {
+                w = max(w, NSAttributedString(
+                    string: sLine, attributes: [.font: font]).size().width)
+            }
+            // The anchor is the text's top-left; it extends downward in
+            // screen terms, i.e. to lower y in this non-flipped view.
+            let v = denormalize(p)
+            let h = font.ascender - font.descender
+                + CGFloat(lines.count - 1) * lineHeight
+            return CGRect(x: v.x, y: v.y - h, width: w, height: h)
         }
     }
 
     private func beginStroke(at point: CGPoint) {
         activeStroke = [normalize(point)]
+        strokeAxisLock = nil
     }
 
-    private func appendStroke(at point: CGPoint) {
+    private func appendStroke(at point: CGPoint, shiftConstrained: Bool = false) {
+        var point = point
+        if shiftConstrained, tool == .highlighter,
+           let start = activeStroke?.first.map(denormalize) {
+            let dx = point.x - start.x, dy = point.y - start.y
+            if let horizontal = strokeAxisLock {
+                point = horizontal ? CGPoint(x: point.x, y: start.y)
+                                   : CGPoint(x: start.x, y: point.y)
+            } else if max(abs(dx), abs(dy)) > 4 {
+                let horizontal = abs(dx) > abs(dy)
+                strokeAxisLock = horizontal
+                point = horizontal ? CGPoint(x: point.x, y: start.y)
+                                   : CGPoint(x: start.x, y: point.y)
+            }
+        }
+        // Marker-style backtrack: dragging back over the stroke trims the
+        // tail instead of stacking a darker second layer.
+        if tool == .highlighter, let pts = activeStroke, pts.count > 4 {
+            let radius = currentWidthNorm * bounds.height * 0.6
+            for i in 0 ..< pts.count - 3 {
+                let v = denormalize(pts[i])
+                if hypot(point.x - v.x, point.y - v.y) < radius {
+                    activeStroke = Array(pts[0...i])
+                    needsDisplay = true
+                    break
+                }
+            }
+        }
         let prev = activeStroke?.last.map(denormalize)
+        // Skip sub-pixel jitter — long strokes would otherwise accumulate
+        // thousands of points and rebuild a huge path on every repaint.
+        if let prev, abs(point.x - prev.x) + abs(point.y - prev.y) < 0.5 { return }
         activeStroke?.append(normalize(point))
         // Repaint only the new segment instead of the whole image per event.
         let a = prev ?? point
@@ -396,6 +556,80 @@ final class FloatingImageView: NSView {
         setNeedsDisplay(CGRect(x: min(a.x, point.x) - pad, y: min(a.y, point.y) - pad,
                                width: abs(point.x - a.x) + pad * 2,
                                height: abs(point.y - a.y) + pad * 2))
+    }
+
+    /// Top-most committed text annotation under the point, if any — used
+    /// to grab and reposition text while the text tool is selected.
+    private func hitTestText(at viewPoint: CGPoint) -> Int? {
+        for (i, ann) in annotations.enumerated().reversed() {
+            if case .text = ann.shape,
+               shapeBounds(ann.shape).insetBy(dx: -8, dy: -8).contains(viewPoint) {
+                return i
+            }
+        }
+        return nil
+    }
+
+    /// Top-most annotation the move tool can grab: strokes/arrows hit by
+    /// proximity to their path, other shapes by their bounds.
+    private func hitTestAnnotation(at p: CGPoint) -> Int? {
+        for (i, ann) in annotations.enumerated().reversed() {
+            let lw = max(ann.widthNorm * bounds.height, 0.5)
+            let pad = lw / 2 + 6
+            switch ann.shape {
+            case .freehand(let pts), .highlight(let pts):
+                var hit = pts.count == 1 &&
+                    shapeBounds(ann.shape)
+                        .insetBy(dx: -pad, dy: -pad).contains(p)
+                for j in 0 ..< max(pts.count - 1, 0) where !hit {
+                    if pointToSegment(p, denormalize(pts[j]),
+                                      denormalize(pts[j + 1])) <= pad {
+                        hit = true
+                    }
+                }
+                if hit { return i }
+            case .arrow(let a, let b):
+                let va = denormalize(a), vb = denormalize(b)
+                if pointToSegment(p, va, vb) <= pad + 4 { return i }
+                let head = lw * 5
+                let angle = atan2(vb.y - va.y, vb.x - va.x)
+                for side in [-1.0, 1.0] as [CGFloat] {
+                    let a2 = angle + CGFloat.pi + side * (CGFloat.pi / 6)
+                    let tip = CGPoint(x: vb.x + head * cos(a2),
+                                      y: vb.y + head * sin(a2))
+                    if pointToSegment(p, vb, tip) <= pad { return i }
+                }
+            default:
+                if shapeBounds(ann.shape)
+                    .insetBy(dx: -6, dy: -6).contains(p) { return i }
+            }
+        }
+        return nil
+    }
+
+    /// Distance from `p` to segment a–b.
+    private func pointToSegment(_ p: CGPoint, _ a: CGPoint,
+                                _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        let t = len2 > 0
+            ? max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
+    /// Translates a shape by a view-space delta.
+    private func translated(_ shape: Annotation.Shape,
+                            dx: CGFloat, dy: CGFloat) -> Annotation.Shape {
+        let nx = dx / max(bounds.width, 1), ny = dy / max(bounds.height, 1)
+        func o(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + nx, y: p.y + ny) }
+        switch shape {
+        case .freehand(let pts): return .freehand(pts.map(o))
+        case .highlight(let pts): return .highlight(pts.map(o))
+        case .arrow(let a, let b): return .arrow(from: o(a), to: o(b))
+        case .rect(let r): return .rect(r.offsetBy(dx: nx, dy: ny))
+        case .mosaic(let r): return .mosaic(r.offsetBy(dx: nx, dy: ny))
+        case .text(let s, let p, let f): return .text(s, o(p), fontNorm: f)
+        }
     }
 
     private func endStroke() {
@@ -416,45 +650,91 @@ final class FloatingImageView: NSView {
 
     private func showTextInput(at viewPoint: CGPoint) {
         commitTextField()
-        let fontSize = textFontNorm * bounds.height
-        let field = NSTextField(frame: NSRect(x: viewPoint.x, y: viewPoint.y - 2,
-                                              width: 180,
-                                              height: max(fontSize + 8, 22)))
-        field.isBezeled = true
-        field.bezelStyle = .roundedBezel
-        field.font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
-        field.textColor = penColor
-        field.target = self
-        field.action = #selector(textFieldCommitted(_:))
-        field.delegate = self
-        addSubview(field)
-        textField = field
-        // Defer until the click that spawned the field has finished, or the
-        // field editor may not be ready to take first responder.
-        DispatchQueue.main.async { [weak self, weak field] in
-            self?.window?.makeFirstResponder(field)
+        let fontSize = textSizeNorm * bounds.height
+        let tv = AnnotationTextView(
+            frame: NSRect(x: viewPoint.x, y: viewPoint.y - fontSize - 10,
+                          width: 60, height: fontSize + 10))
+        tv.isEditable = true
+        tv.isSelectable = true
+        tv.isRichText = false
+        tv.importsGraphics = false
+        tv.drawsBackground = false
+        tv.font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        tv.textColor = penColor
+        tv.insertionPointColor = penColor
+        tv.textContainerInset = NSSize(width: 2, height: 4)
+        // No auto-wrap: an unbounded container so the box only grows with
+        // the text and explicit Shift+Enter newlines.
+        tv.textContainer?.widthTracksTextView = false
+        tv.textContainer?.containerSize = CGSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude)
+        tv.delegate = self
+        tv.onCommit = { [weak self] in self?.commitTextField() }
+        tv.onCancel = { [weak self] in self?.cancelTextField() }
+        tv.onResize = { [weak self] d in self?.adjustTextSize(by: d) }
+        addSubview(tv)
+        textEditor = tv
+        textAnchor = viewPoint
+        sizeTextEditor(tv)
+        // Defer until the click that spawned the editor has finished, or it
+        // may not be ready to take first responder.
+        DispatchQueue.main.async { [weak self, weak tv] in
+            self?.window?.makeFirstResponder(tv)
         }
     }
 
-    @objc private func textFieldCommitted(_ sender: NSTextField) {
-        commitTextField()
+    /// Keeps the editor's frame fitted to its text, anchored at the top-left.
+    private func sizeTextEditor(_ tv: NSTextView) {
+        guard let container = tv.textContainer,
+              let lm = tv.layoutManager else { return }
+        lm.ensureLayout(for: container)
+        let used = lm.usedRect(for: container)
+        let w = max(used.width + 12, 60)
+        let h = max(used.height + 10, textSizeNorm * bounds.height + 10)
+        tv.frame = NSRect(x: textAnchor.x, y: textAnchor.y - h,
+                          width: w, height: h)
     }
 
-    /// Adds the field's text as an annotation (or just removes the field
+    /// ⌘+/⌘-: scale the text size — live in the open editor, otherwise the
+    /// default for the next text annotation.
+    func adjustTextSize(by dir: CGFloat) {
+        textSizeNorm = min(max(textSizeNorm + dir * 0.01, 0.02), 0.15)
+        guard let tv = textEditor else { return }
+        let font = NSFont.systemFont(ofSize: textSizeNorm * bounds.height,
+                                     weight: .bold)
+        tv.textStorage?.addAttribute(.font, value: font,
+                                     range: NSRange(location: 0,
+                                                    length: tv.string.count))
+        tv.typingAttributes[.font] = font
+        tv.textStorage?.addAttribute(.foregroundColor, value: penColor,
+                                     range: NSRange(location: 0,
+                                                    length: tv.string.count))
+        tv.typingAttributes[.foregroundColor] = penColor
+        sizeTextEditor(tv)
+    }
+
+    /// Adds the editor's text as an annotation (or just removes the editor
     /// when the text is empty), returning focus to the panel.
     private func commitTextField() {
-        guard let field = textField else { return }
-        let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard let field = textEditor else { return }
+        let text = field.string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
             // Anchor = the text's top-left in normalized coordinates.
-            let p = CGPoint(x: field.frame.minX / max(bounds.width, 1),
-                            y: (field.frame.maxY - 4) / max(bounds.height, 1))
-            annotations.append(Annotation(shape: .text(text, p),
-                                          color: penColor,
-                                          widthNorm: strokeWidthNorm))
+            let p = CGPoint(
+                x: (field.frame.minX + 2) / max(bounds.width, 1),
+                y: (field.frame.maxY - 4) / max(bounds.height, 1))
+            annotations.append(
+                Annotation(shape: .text(text, p, fontNorm: textSizeNorm),
+                           color: penColor, widthNorm: strokeWidthNorm))
         }
-        field.removeFromSuperview()
-        textField = nil
+        cancelTextField()
+    }
+
+    private func cancelTextField() {
+        textEditor?.removeFromSuperview()
+        textEditor = nil
         needsDisplay = true
         window?.makeFirstResponder(self)
     }
@@ -487,7 +767,7 @@ final class FloatingImageView: NSView {
                 ctx.strokePath()
             case .highlight(let points):
                 ctx.saveGState()
-                ctx.setStrokeColor(ann.color.withAlphaComponent(0.35).cgColor)
+                ctx.setStrokeColor(ann.color.withAlphaComponent(highlightAlpha).cgColor)
                 ctx.setLineWidth(lw)
                 ctx.setLineCap(.butt)
                 for (i, raw) in points.enumerated() {
@@ -513,9 +793,9 @@ final class FloatingImageView: NSView {
                            rect: CGRect(x: r.minX * pxW, y: r.minY * pxH,
                                         width: r.width * pxW, height: r.height * pxH),
                            canvasH: pxH)
-            case .text(let s, let p):
+            case .text(let s, let p, let fontNorm):
                 bakeText(ctx, s, at: CGPoint(x: p.x * pxW, y: p.y * pxH),
-                         fontSize: textFontNorm * pxH, color: ann.color)
+                         fontSize: fontNorm * pxH, color: ann.color)
             }
         }
         guard let out = ctx.makeImage() else { return nil }
@@ -568,16 +848,20 @@ final class FloatingImageView: NSView {
     private func bakeText(_ ctx: CGContext, _ s: String, at topLeft: CGPoint,
                           fontSize: CGFloat, color: NSColor) {
         let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: color,
-        ]
-        let attrStr = NSAttributedString(string: s, attributes: attrs)
-        let line = CTLineCreateWithAttributedString(attrStr)
-        // topLeft is the text's top edge; place the baseline under it.
-        ctx.textPosition = CGPoint(x: topLeft.x,
-                                   y: topLeft.y - font.ascender)
-        CTLineDraw(line, ctx)
+        let lineHeight = font.ascender - font.descender + font.leading
+        // topLeft is the text's top edge; each line's baseline sits one
+        // ascender below the previous line's top.
+        for (i, sLine) in s.components(separatedBy: "\n").enumerated() {
+            let attrStr = NSAttributedString(string: sLine, attributes: [
+                .font: font,
+                .foregroundColor: color,
+            ])
+            let line = CTLineCreateWithAttributedString(attrStr)
+            ctx.textPosition = CGPoint(
+                x: topLeft.x,
+                y: topLeft.y - font.ascender - CGFloat(i) * lineHeight)
+            CTLineDraw(line, ctx)
+        }
     }
 
     // MARK: - Mouse
@@ -592,7 +876,27 @@ final class FloatingImageView: NSView {
                 dragAnchor = p
                 activeShape = nil
             case .text:
-                showTextInput(at: p)
+                if let idx = hitTestText(at: p) {
+                    draggingTextIndex = idx
+                    if case .text(_, let anchor, _) = annotations[idx].shape {
+                        let a = denormalize(anchor)
+                        textDragOffset = CGSize(width: p.x - a.x,
+                                                height: p.y - a.y)
+                    }
+                } else {
+                    showTextInput(at: p)
+                }
+            case .move:
+                guard let idx = hitTestAnnotation(at: p) else { return }
+                movingIndex = idx
+                moveExcludedIndex = idx
+                moveOrigin = annotations[idx].shape
+                moveOriginBounds = shapeBounds(annotations[idx].shape)
+                moveStart = p
+                activeShape = annotations[idx].shape
+                invalidateComposite()
+                needsDisplay = true
+                NSCursor.closedHand.set()
             }
             return
         }
@@ -611,7 +915,7 @@ final class FloatingImageView: NSView {
             let p = convert(event.locationInWindow, from: nil)
             switch tool {
             case .pen, .highlighter:
-                appendStroke(at: p)
+                appendStroke(at: p, shiftConstrained: event.modifierFlags.contains(.shift))
             case .arrow, .rect, .mosaic:
                 guard let anchor = dragAnchor else { return }
                 // Repaint the union of old and new preview bounds.
@@ -620,7 +924,24 @@ final class FloatingImageView: NSView {
                 dirty = dirty.union(shapeBounds(activeShape!))
                 setNeedsDisplay(dirty.insetBy(dx: -8, dy: -8).intersection(bounds))
             case .text:
-                break
+                guard let idx = draggingTextIndex, idx < annotations.count,
+                      case .text(let s, _, let fontNorm) = annotations[idx].shape
+                else { return }
+                var dirty = shapeBounds(annotations[idx].shape)
+                let np = CGPoint(x: p.x - textDragOffset.width,
+                                 y: p.y - textDragOffset.height)
+                annotations[idx].shape =
+                    .text(s, clampNorm(normalize(np)), fontNorm: fontNorm)
+                dirty = dirty.union(shapeBounds(annotations[idx].shape))
+                setNeedsDisplay(dirty.insetBy(dx: -4, dy: -4))
+            case .move:
+                guard let idx = movingIndex, idx < annotations.count,
+                      let origin = moveOrigin else { return }
+                let dx = p.x - moveStart.x, dy = p.y - moveStart.y
+                var dirty = activeShape.map { shapeBounds($0) } ?? .null
+                activeShape = translated(origin, dx: dx, dy: dy)
+                dirty = dirty.union(moveOriginBounds.offsetBy(dx: dx, dy: dy))
+                setNeedsDisplay(dirty.insetBy(dx: -16, dy: -16))
             }
             return
         }
@@ -642,14 +963,26 @@ final class FloatingImageView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if isPenMode {
-            if tool == .pen || tool == .highlighter {
+            if tool == .move {
+                if let idx = movingIndex, idx < annotations.count,
+                   let shape = activeShape {
+                    annotations[idx].shape = shape
+                }
+                movingIndex = nil
+                moveExcludedIndex = nil
+                moveOrigin = nil
+                activeShape = nil
+                needsDisplay = true
+            } else if tool == .pen || tool == .highlighter {
                 endStroke()
             } else if let shape = activeShape {
                 annotations.append(Annotation(shape: shape, color: penColor,
                                               widthNorm: strokeWidthNorm))
                 activeShape = nil
+                needsDisplay = true
             }
             dragAnchor = nil
+            draggingTextIndex = nil
             return
         }
         if !didMove, dragZone == .none {
@@ -657,6 +990,7 @@ final class FloatingImageView: NSView {
             flashCopyFeedback()
         }
         dragZone = .none
+        endLiveResize()
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -816,10 +1150,7 @@ final class FloatingImageView: NSView {
     }
 
     @objc private func penAction() {
-        guard let panel else { return }
-        enterPenMode()
-        panel.hoverToolbar.setMode(.pen)
-        panel.hoverToolbar.show()
+        panel?.enterAnnotateUI()
     }
 
     @objc private func closeAction() {
@@ -978,6 +1309,7 @@ final class FloatingImageView: NSView {
             )
         }
         window.setFrame(frame, display: true)
+        beginLiveResize()
         showSizeBadge()
     }
 
@@ -996,22 +1328,40 @@ final class FloatingImageView: NSView {
                              y: mouse.y - newH * fracY)
         window.setFrame(CGRect(origin: origin, size: CGSize(width: newW, height: newH)),
                         display: true)
+        beginLiveResize()
         showSizeBadge()
     }
 
     // MARK: - Size badge
 
-    /// Shows the current view dimensions as a transient overlay at the
-    /// bottom center of the panel — never baked into the image.
+    /// Shows the current view size and the stored image's native pixel
+    /// size as a transient overlay at the bottom center — never baked.
+    /// When the pill is wider than the panel it floats just below the
+    /// image instead of covering it.
     private func showSizeBadge() {
         let s = bounds.size
-        sizeBadge.stringValue =
-            "\(Int(s.width.rounded())) × \(Int(s.height.rounded()))"
-        sizeBadge.sizeToFit()
-        let w = sizeBadge.frame.width + 16
-        let h = sizeBadge.frame.height + 8
-        sizeBadge.frame = NSRect(x: (s.width - w) / 2,
-                                 y: 8, width: w, height: h)
+        // Effective pixels (points × screen scale) — matches the capture's
+        // native resolution when the panel sits at 100% on Retina.
+        let scale = window?.backingScaleFactor ?? 2
+        let text = "\(Int((s.width * scale).rounded())) × \(Int((s.height * scale).rounded()))"
+        sizeBadgeLabel.stringValue = text
+        sizeBadgeLabel.sizeToFit()
+        let lw = sizeBadgeLabel.frame.width
+        let lh = sizeBadgeLabel.frame.height
+        let w = lw + 16
+        let h = lh + 8
+        if sizeBadgeLabel.superview !== sizeBadge {
+            sizeBadge.addSubview(sizeBadgeLabel)
+        }
+        sizeBadgeLabel.frame = NSRect(x: (w - lw) / 2, y: (h - lh) / 2,
+                                      width: lw, height: lh)
+        if w <= s.width - 8 {
+            panel?.attachSizeBadgeInside(sizeBadge)
+            sizeBadge.frame = NSRect(x: (s.width - w) / 2,
+                                     y: 6, width: w, height: h)
+        } else {
+            panel?.detachSizeBadge(sizeBadge, size: NSSize(width: w, height: h))
+        }
         sizeBadge.isHidden = false
         sizeBadge.alphaValue = 1
         sizeBadgeTimer?.invalidate()
@@ -1025,6 +1375,7 @@ final class FloatingImageView: NSView {
                 } completionHandler: {
                     Task { @MainActor in
                         self.sizeBadge.isHidden = true
+                        self.panel?.orderOutSizeBadgeWindow()
                     }
                 }
             }
@@ -1039,14 +1390,40 @@ extension FloatingImageView: NSDraggingSource {
     }
 }
 
-extension FloatingImageView: NSTextFieldDelegate {
-    /// Esc inside the text field discards just the field, not pen mode.
-    func control(_ control: NSControl, textView: NSTextView,
-                 doCommandBy commandSelector: Selector) -> Bool {
-        guard commandSelector == #selector(NSResponder.cancelOperation(_:))
-        else { return false }
-        textField?.stringValue = ""
-        commitTextField()
-        return true
+extension FloatingImageView: NSTextViewDelegate {
+    /// Grow/shrink the editor to fit its text on every keystroke.
+    func textDidChange(_ notification: Notification) {
+        guard let tv = notification.object as? AnnotationTextView,
+              tv === textEditor else { return }
+        sizeTextEditor(tv)
+    }
+}
+
+/// Multi-line editor for the text tool. Enter commits, Shift+Enter inserts
+/// a newline, Esc cancels, ⌘+/⌘- resize the text.
+private final class AnnotationTextView: NSTextView {
+    var onCommit: (() -> Void)?
+    var onCancel: (() -> Void)?
+    var onResize: ((CGFloat) -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 36, 76: // Return / keypad Enter
+            if event.modifierFlags.contains(.shift) {
+                insertNewline(nil)
+            } else {
+                onCommit?()
+            }
+        case 53: // Esc — discard the editor, stay in annotate mode
+            onCancel?()
+        case 24, 27: // ⌘= / ⌘-
+            if event.modifierFlags.contains(.command) {
+                onResize?(event.keyCode == 24 ? 1 : -1)
+            } else {
+                super.keyDown(with: event)
+            }
+        default:
+            super.keyDown(with: event)
+        }
     }
 }

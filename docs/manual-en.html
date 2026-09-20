@@ -22,6 +22,8 @@
     --callout-warn-border: #d97a00;
     --figure-border: #e3e3e8;
     --shadow: 0 12px 32px rgba(0,0,0,.14);
+    --zebra: rgba(0,0,0,.022);
+    --select: rgba(59,111,224,.22);
   }
   [data-theme="dark"] {
       --accent: #7ba3f0;
@@ -39,6 +41,8 @@
       --callout-warn-border: #e0a04a;
       --figure-border: #33333a;
       --shadow: 0 12px 32px rgba(0,0,0,.5);
+      --zebra: rgba(255,255,255,.035);
+      --select: rgba(123,163,240,.3);
   }
   [data-theme="dark"] .hero img { box-shadow: 0 12px 32px rgba(0,0,0,.55); }
   [data-theme="dark"] figure img { box-shadow: 0 6px 24px rgba(0,0,0,.4); }
@@ -47,7 +51,11 @@
   body {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     background: var(--bg); color: var(--text);
-    line-height: 1.7; -webkit-font-smoothing: antialiased;
+    line-height: 1.75; -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--select); }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px;
   }
   .wrap { max-width: 860px; margin: 0 auto; padding: 48px 24px 96px; }
 
@@ -72,9 +80,9 @@
     vertical-align: super; margin-right: 8px; }
   h3 { font-size: 17px; font-weight: 650; margin: 24px 0 8px; }
   h3:first-of-type { margin-top: 16px; }
-  p { font-size: 15px; color: var(--text2); margin: 8px 0; }
+  p { font-size: 15.5px; color: var(--text2); margin: 8px 0; }
   p.muted, .muted { color: var(--muted); }
-  ul, ol { font-size: 15px; color: var(--text2); padding-left: 22px; margin: 8px 0; }
+  ul, ol { font-size: 15.5px; color: var(--text2); padding-left: 22px; margin: 8px 0; }
   li { margin: 5px 0; }
   li::marker { color: var(--accent); }
   code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px;
@@ -93,6 +101,8 @@
     padding: 8px 12px; border-bottom: 2px solid var(--border); }
   td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text2); }
   tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: var(--zebra); }
+  tbody tr:hover td, tr:hover td { background: var(--accent-bg); }
   td.keys { white-space: nowrap; }
 
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
@@ -108,7 +118,9 @@
   .callout { border-left: 3px solid var(--accent); background: var(--accent-bg);
     border-radius: 0 10px 10px 0; padding: 14px 18px; margin: 16px 0; font-size: 14.5px;
     color: var(--text2); }
+  .callout::before { content: "💡"; margin-right: 8px; }
   .callout.warn { border-color: var(--callout-warn-border); background: var(--callout-warn-bg); }
+  .callout.warn::before { content: "⚠️"; }
 
   .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
     margin: 16px 0; font-size: 14px; font-weight: 550; }
@@ -149,6 +161,26 @@
     display: flex; align-items: center; justify-content: center;
     box-shadow: 0 4px 14px rgba(0,0,0,.12); }
   .theme-toggle:hover { color: var(--accent); }
+
+  /* ── Reading progress ── */
+  .progress { position: fixed; top: 0; left: 0; height: 3px; width: 0;
+    background: var(--accent); z-index: 50; transition: width .08s linear; }
+
+  /* ── Section anchors ── */
+  h2 .anchor { color: var(--muted); text-decoration: none; font-size: 15px;
+    font-weight: 400; margin-left: 10px; opacity: 0; transition: opacity .15s;
+    vertical-align: middle; }
+  h2:hover .anchor { opacity: .85; }
+  h2 .anchor:hover { color: var(--accent); }
+
+  /* ── Section entrance ── */
+  html.js section { opacity: 0; transform: translateY(10px);
+    transition: opacity .45s ease, transform .45s ease; }
+  html.js section.visible { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    html.js section { opacity: 1; transform: none; transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -315,7 +347,7 @@
       <tr><td><b>Collapse/restore</b></td><td>Double-click — folds into a thumbnail; double-click again to restore</td></tr>
       <tr><td><b>Copy image</b></td><td>Click or <kbd>⌘</kbd><kbd>C</kbd> — paste straight into other apps</td></tr>
       <tr><td><b>Save to file</b></td><td><kbd>⌘</kbd><kbd>S</kbd> — PNG or JPEG</td></tr>
-      <tr><td><b>Annotate</b></td><td><kbd>P</kbd> — annotation mode (pen · highlighter · arrow · rectangle · mosaic · text)</td></tr>
+      <tr><td><b>Annotate</b></td><td><kbd>P</kbd> — annotation mode (pen · highlighter · arrow · rectangle · mosaic · text · move)</td></tr>
       <tr><td><b>Extract text (OCR)</b></td><td>Toolbar OCR button or right-click menu — recognized text goes to the clipboard</td></tr>
       <tr><td><b>Always on top</b></td><td><kbd>T</kbd> — pin above all windows</td></tr>
       <tr><td><b>Click-through</b></td><td><kbd>G</kbd> — the panel stays visible but the mouse passes through</td></tr>
@@ -335,15 +367,16 @@
        Pick a tool from the front of the toolbar, then drag on the image.</p>
     <figure>
       <img src="screenshots/annotate-en.png" alt="Annotation mode — tool strip and a pen stroke">
-      <figcaption>Annotation mode — pick a tool and color in the top strip, then ✓ bakes it into the image</figcaption>
+      <figcaption>Annotation mode — pick a tool and color in the top strip, then ✓ bakes it into the image. When the strip is wider than the panel it floats just above it, so it never covers the image</figcaption>
     </figure>
     <ul>
       <li><b>Pen</b> — freehand drawing</li>
-      <li><b>Highlighter</b> — a wide translucent band along your drag path</li>
+      <li><b>Highlighter</b> — a wide translucent band along your drag path; hold <kbd>⇧</kbd> while dragging to snap it perfectly horizontal or vertical, and drag back over a stroke before releasing to erase it</li>
       <li><b>Arrow</b> — an arrow pointing along your drag direction</li>
       <li><b>Rectangle</b> — an area-highlight box</li>
       <li><b>Mosaic</b> — pixelates the dragged region to hide sensitive info</li>
-      <li><b>Text</b> — an input field appears where you click; <kbd>Return</kbd> commits, <kbd>Esc</kbd> cancels</li>
+      <li><b>Text</b> — an input field appears where you click; <kbd>Return</kbd> commits, <kbd>⇧</kbd><kbd>Return</kbd> adds a line break, <kbd>Esc</kbd> cancels. No auto-wrap — the box grows horizontally; <kbd>⌘</kbd><kbd>+</kbd>/<kbd>−</kbd> adjusts the font size</li>
+      <li><b>Move</b> — the hand icon; grab any placed annotation (stroke, arrow, rectangle, mosaic, text) and drag it to a new spot</li>
       <li><b>Colors</b> — red · yellow · green · blue</li>
       <li><b>Undo</b> — <kbd>⌘</kbd><kbd>Z</kbd> or the undo button removes the last annotation</li>
       <li><b>Clear all</b> — the trash button removes every annotation</li>
@@ -395,6 +428,7 @@
       <div class="mini"><h4>New panels always on top</h4><p>New floating panels start pinned above everything.</p></div>
       <div class="mini"><h4>Default save location</h4><p>Sets the folder that ⌘S save dialogs open to.</p></div>
       <div class="mini"><h4>Recent captures kept</h4><p>How many captures to keep in history, from 1 to 50.</p></div>
+      <div class="mini"><h4>Move purged captures to Trash</h4><p>When on, captures pruned past the history limit go to the Trash instead of being permanently deleted. Off by default.</p></div>
       <div class="mini"><h4>Remap shortcuts</h4><p>Assign any of the 6 global shortcuts to a combo you like.</p></div>
       <div class="mini"><h4>Launch at login</h4><p>HoldImg sits in your menu bar as soon as your Mac starts.</p></div>
       <div class="mini"><h4>Show Dock icon</h4><p>Keep it menu-bar-only or also show it in the Dock.</p></div>
@@ -436,11 +470,19 @@
   </footer>
 </div>
 
+<div class="progress" id="progress"></div>
 <a class="toplink" href="#top" id="toplink" aria-label="Back to top">↑</a>
 <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">◐</button>
 <script>
+  document.documentElement.classList.add('js');
+
   const tl = document.getElementById('toplink');
-  addEventListener('scroll', () => tl.classList.toggle('show', scrollY > 600));
+  const bar = document.getElementById('progress');
+  addEventListener('scroll', () => {
+    tl.classList.toggle('show', scrollY > 600);
+    const max = document.documentElement.scrollHeight - innerHeight;
+    bar.style.width = (max > 0 ? scrollY / max * 100 : 0) + '%';
+  }, { passive: true });
 
   const root = document.documentElement;
   const saved = localStorage.getItem('holdimg-theme');
@@ -450,6 +492,20 @@
     if (next) root.dataset.theme = next; else delete root.dataset.theme;
     localStorage.setItem('holdimg-theme', next);
   };
+
+  document.querySelectorAll('section[id] > h2').forEach(h => {
+    const a = document.createElement('a');
+    a.className = 'anchor';
+    a.href = '#' + h.parentElement.id;
+    a.textContent = '#';
+    a.setAttribute('aria-label', 'Link to this section');
+    h.appendChild(a);
+  });
+
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); }
+  }), { threshold: .05 });
+  document.querySelectorAll('section').forEach(s => io.observe(s));
 </script>
 </body>
 </html>

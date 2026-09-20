@@ -22,7 +22,8 @@ final class PanelToolbar: NSVisualEffectView {
         ("arrow.up.right", "화살표"),
         ("square", "사각형"),
         ("square.grid.3x3", "모자이크"),
-        ("textformat", "텍스트"),
+        ("", "텍스트"),
+        ("hand.point.up.left", "이동 — 주석을 드래그로 옮기기"),
     ]
     private static func toolTip(at index: Int) -> String {
         L10n.tr(toolButtons[index].tip)
@@ -33,6 +34,9 @@ final class PanelToolbar: NSVisualEffectView {
     var contentSize: CGSize { stack.fittingSize }
 
     var onAction: ((Action) -> Void)?
+    /// Fired when the pointer leaves the toolbar — used to collapse a
+    /// detached bar once the cursor is off both panel and bar.
+    var onExit: (() -> Void)?
 
     private(set) var mode: Mode = .normal
     private var penModeActive: Bool { mode == .pen }
@@ -124,6 +128,7 @@ final class PanelToolbar: NSVisualEffectView {
             context.duration = 0.15
             animator().alphaValue = Self.restingAlpha
         }
+        onExit?()
     }
 
     func hide() {
@@ -159,8 +164,15 @@ final class PanelToolbar: NSVisualEffectView {
             addButton(symbol: "xmark", tag: 4, tip: L10n.tr("닫기 (⌘W/Esc)"))
         case .pen:
             for (i, spec) in Self.toolButtons.enumerated() {
-                addButton(symbol: spec.symbol, tag: 200 + i, tip: Self.toolTip(at: i),
-                          tint: i == toolIndex ? .controlAccentColor : nil)
+                // The text tool uses a literal "Aa" — SF Symbols' textformat
+                // glyph localizes to "가가" under Korean, which reads oddly.
+                if spec.symbol.isEmpty {
+                    addTextButton(title: "Aa", tag: 200 + i, tip: Self.toolTip(at: i),
+                                  tint: i == toolIndex ? .controlAccentColor : nil)
+                } else {
+                    addButton(symbol: spec.symbol, tag: 200 + i, tip: Self.toolTip(at: i),
+                              tint: i == toolIndex ? .controlAccentColor : nil)
+                }
             }
             addSeparator()
             for (i, color) in Self.penColors.enumerated() {
@@ -191,6 +203,27 @@ final class PanelToolbar: NSVisualEffectView {
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
         button.imageScaling = .scaleProportionallyDown
         button.contentTintColor = tint ?? .labelColor
+        button.target = self
+        button.action = #selector(buttonTapped(_:))
+        button.tag = tag
+        button.toolTip = tip
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 24),
+            button.heightAnchor.constraint(equalToConstant: 24),
+        ])
+        stack.addArrangedSubview(button)
+    }
+
+    private func addTextButton(title: String, tag: Int, tip: String, tint: NSColor? = nil) {
+        let button = NSButton()
+        button.isBordered = false
+        button.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: tint ?? .labelColor,
+            ])
         button.target = self
         button.action = #selector(buttonTapped(_:))
         button.tag = tag
@@ -244,8 +277,11 @@ final class PanelToolbar: NSVisualEffectView {
         case 7: action = .done
         case 8: action = .toggleLock
         case 9: action = .ocr
-        case 200...205: action = .tool(sender.tag - 200)
-        default: action = .color(sender.tag - 100)
+        default:
+            // Tool buttons are tagged 200+, color swatches 100+.
+            action = sender.tag >= 200
+                ? .tool(sender.tag - 200)
+                : .color(sender.tag - 100)
         }
         onAction?(action)
     }

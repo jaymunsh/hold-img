@@ -117,10 +117,12 @@ System Settings → Privacy & Security → Screen Recording, then capture again.
 Hovering over a panel reveals a toolbar at the top right — pen · copy ·
 save · OCR · aspect lock · close.
 
-Annotation mode (`P`) offers **pen (freehand) · highlighter (translucent band) ·
-arrow · rectangle · mosaic · text**, four colors, undo (`⌘Z`), and clear-all.
-Mosaic is handy for redacting sensitive info; text is typed right where you
-click. Pressing done (✓) bakes annotations into the image at native
+Annotation mode (`P`) offers **pen (freehand) · highlighter (translucent band —
+drag back over a stroke to erase it) · arrow · rectangle · mosaic ·
+text (`⇧Enter` for line breaks, `⌘+`/`⌘-` for size) · move (hand)**,
+four colors, undo (`⌘Z`), and clear-all.
+Mosaic is handy for redacting sensitive info; the move tool drags placed
+annotations to a new spot. Pressing done (✓) bakes annotations into the image at native
 resolution so copies and saves include them. `Esc`/`P` discards and exits.
 
 The menu bar icon provides recent capture history, close-all, click-through

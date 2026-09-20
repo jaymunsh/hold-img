@@ -5,6 +5,14 @@ final class FloatingPanel: NSPanel {
     private(set) var image: NSImage
     let hoverToolbar = PanelToolbar()
 
+    /// Detached child window hosting the annotation toolbar while pen mode
+    /// is active and the toolbar is wider than the panel itself.
+    private var penBarWindow: NSPanel?
+
+    /// Detached child window hosting the size badge below the panel when
+    /// the pill is wider than the image itself.
+    private var sizeBadgeWindow: NSPanel?
+
     /// Corner-drag resize keeps the aspect ratio while locked (default).
     var aspectLocked = true
 
@@ -35,6 +43,24 @@ final class FloatingPanel: NSPanel {
         minSize = NSSize(width: 32, height: 32)
         contentView = FloatingImageView(image: image)
         attachHoverToolbar()
+        hoverToolbar.onExit = { [weak self] in self?.hideHoverToolbar() }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(frameDidChange),
+            name: NSWindow.didResizeNotification, object: self)
+    }
+
+    /// Repositions the detached pen toolbar whenever the panel resizes,
+    /// and re-evaluates whether it still needs to live outside.
+    @objc private func frameDidChange(_ note: Notification) {
+        positionPenBar()
+        positionSizeBadge()
+        guard let view = contentView as? FloatingImageView else { return }
+        let tooWide = hoverToolbar.contentSize.width > view.bounds.width - 16
+        if tooWide, !hoverToolbar.isHidden || view.isPenMode {
+            detachPenBar()
+        } else if !tooWide, penBarWindow != nil {
+            attachPenBarInside()
+        }
     }
 
     override var canBecomeKey: Bool { true }
@@ -51,13 +77,197 @@ final class FloatingPanel: NSPanel {
         hoverToolbar.onAction = { [weak self] action in self?.handleToolbar(action) }
     }
 
+    /// True when this panel is the front-most panel under the cursor —
+    /// overlapped panels stay dark instead of all flashing their toolbars
+    /// at once. `panels` is kept in z-order (each new panel orders front).
+    private var isTopmostUnderCursor: Bool {
+        let p = NSEvent.mouseLocation
+        let panels = FloatingWindowManager.shared.panels
+        if panels.contains(where: {
+            $0 !== self &&
+            ($0.penBarWindow?.frame.contains(p) == true ||
+             $0.sizeBadgeWindow?.frame.contains(p) == true)
+        }) {
+            return false  // another panel's detached bar sits on top of us
+        }
+        guard let top = panels.last(where: { $0.isVisible && $0.frame.contains(p) })
+        else { return true }
+        return top === self
+    }
+
+    /// Shows the hover toolbar; when it is wider than the panel it is
+    /// hosted in the floating bar above the image instead of covering it.
+    func showHoverToolbar() {
+        guard let view = contentView as? FloatingImageView,
+              !view.isPenMode, isTopmostUnderCursor else { return }
+        // Only the topmost panel under the cursor may light up — occluded
+        // siblings hiding inside the same cursor rect go dark.
+        for case let other as FloatingPanel in NSApp.windows where other !== self {
+            other.hideHoverToolbar()
+        }
+        if penBarWindow == nil,
+           hoverToolbar.contentSize.width > view.bounds.width - 16 {
+            detachPenBar()
+        }
+        hoverToolbar.show()
+    }
+
+    /// Collapses the toolbar once the pointer is off both the panel and
+    /// the detached bar — delayed and edge-inflated so crossing the gap
+    /// between them does not flicker it shut.
+    func hideHoverToolbar() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self,
+                  let view = self.contentView as? FloatingImageView,
+                  !view.isPenMode else { return }
+            let p = NSEvent.mouseLocation
+            let insidePanel = self.frame.insetBy(dx: -12, dy: -12).contains(p)
+                && self.isTopmostUnderCursor
+            let pbad = self.penBarWindow?.frame.insetBy(dx: -12, dy: -12)
+            if insidePanel || pbad?.contains(p) == true {
+                return
+            }
+            self.hoverToolbar.hide()
+            if self.penBarWindow != nil { self.attachPenBarInside() }
+        }
+    }
+
+    /// Pen-mode entry: the tool strip is hosted in a floating bar above
+    /// (or below) the image only when it is wider than the panel itself.
+    func enterAnnotateUI() {
+        guard let view = contentView as? FloatingImageView else { return }
+        view.enterPenMode()
+        hoverToolbar.setMode(.pen)
+        // detachPenBar() resizes the existing bar too — the wider pen
+        // strip must re-fit the window even when a bar is already out.
+        if hoverToolbar.contentSize.width > view.bounds.width - 16 {
+            detachPenBar()
+        } else if penBarWindow != nil {
+            attachPenBarInside()
+        }
+        hoverToolbar.show()
+    }
+
+    private func exitAnnotateUI(bake: Bool) {
+        (contentView as? FloatingImageView)?.exitPenMode(bake: bake)
+        hoverToolbar.setMode(.normal)
+        attachPenBarInside()
+    }
+
+    private func detachPenBar() {
+        let bar: NSPanel
+        if let existing = penBarWindow {
+            bar = existing
+        } else {
+            bar = NSPanel(contentRect: .zero,
+                          styleMask: [.borderless, .nonactivatingPanel],
+                          backing: .buffered, defer: false)
+            bar.isOpaque = false
+            bar.backgroundColor = .clear
+            bar.hasShadow = false
+            bar.isReleasedWhenClosed = false
+            bar.hidesOnDeactivate = false
+            addChildWindow(bar, ordered: .above)
+            penBarWindow = bar
+        }
+        bar.level = level
+        let size = hoverToolbar.contentSize
+        hoverToolbar.removeFromSuperview()
+        hoverToolbar.autoresizingMask = []
+        bar.contentView = hoverToolbar
+        bar.setContentSize(size)
+        positionPenBar()
+        bar.orderFront(nil)
+    }
+
+    /// Centers the detached bar over the panel's top edge; flips below the
+    /// panel when there is no room above on the current screen.
+    private func positionPenBar() {
+        guard let bar = penBarWindow else { return }
+        let size = bar.frame.size
+        var x = frame.midX - size.width / 2
+        var y = frame.maxY + 6
+        if let vf = (screen ?? NSScreen.main)?.visibleFrame {
+            if y + size.height > vf.maxY {
+                y = frame.minY - size.height - 6
+            }
+            x = min(max(x, vf.minX + 4), vf.maxX - size.width - 4)
+        }
+        bar.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func attachPenBarInside() {
+        guard let bar = penBarWindow else { return }
+        hoverToolbar.removeFromSuperview()
+        attachHoverToolbar()
+        removeChildWindow(bar)
+        bar.orderOut(nil)
+        penBarWindow = nil
+    }
+
+    /// Hosts the size badge in a floating child window below the panel —
+    /// used while resizing when the pill is wider than the image.
+    func detachSizeBadge(_ badge: NSView, size: NSSize) {
+        let win: NSPanel
+        if let existing = sizeBadgeWindow {
+            win = existing
+        } else {
+            win = NSPanel(contentRect: .zero,
+                          styleMask: [.borderless, .nonactivatingPanel],
+                          backing: .buffered, defer: false)
+            win.isOpaque = false
+            win.backgroundColor = .clear
+            win.hasShadow = false
+            win.isReleasedWhenClosed = false
+            win.hidesOnDeactivate = false
+            addChildWindow(win, ordered: .above)
+            sizeBadgeWindow = win
+        }
+        win.level = level
+        if win.contentView !== badge {
+            badge.removeFromSuperview()
+            win.contentView = badge
+        }
+        win.setContentSize(size)
+        positionSizeBadge()
+        win.orderFront(nil)
+    }
+
+    /// Centers the detached badge under the panel's bottom edge; flips
+    /// above the panel when there is no room below on the current screen.
+    private func positionSizeBadge() {
+        guard let win = sizeBadgeWindow else { return }
+        var x = frame.midX - win.frame.width / 2
+        var y = frame.minY - win.frame.height - 6
+        if let vf = (screen ?? NSScreen.main)?.visibleFrame {
+            if y < vf.minY {
+                y = frame.maxY + 6
+            }
+            x = min(max(x, vf.minX + 4), vf.maxX - win.frame.width - 4)
+        }
+        win.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    /// Puts the badge back inside the image view once it fits again.
+    func attachSizeBadgeInside(_ badge: NSView) {
+        guard let win = sizeBadgeWindow else { return }
+        badge.removeFromSuperview()
+        contentView?.addSubview(badge)
+        removeChildWindow(win)
+        win.orderOut(nil)
+        sizeBadgeWindow = nil
+    }
+
+    /// Hides the detached badge window when the badge fades out.
+    func orderOutSizeBadgeWindow() {
+        sizeBadgeWindow?.orderOut(nil)
+    }
+
     private func handleToolbar(_ action: PanelToolbar.Action) {
         guard let view = contentView as? FloatingImageView else { return }
         switch action {
         case .pen:
-            view.enterPenMode()
-            hoverToolbar.setMode(.pen)
-            hoverToolbar.show()
+            enterAnnotateUI()
         case .copy:
             copyImageToPasteboard()
             view.flashCopyFeedback()
@@ -85,8 +295,7 @@ final class FloatingPanel: NSPanel {
         case .clear:
             view.clearStrokes()
         case .done:
-            view.exitPenMode(bake: true)
-            hoverToolbar.setMode(.normal)
+            exitAnnotateUI(bake: true)
         }
     }
 
@@ -103,8 +312,7 @@ final class FloatingPanel: NSPanel {
             .intersection([.shift, .control, .option, .command])
         if event.keyCode == 53 { // Esc
             if view?.isPenMode == true {
-                view?.exitPenMode(bake: false)
-                hoverToolbar.setMode(.normal)
+                exitAnnotateUI(bake: false)
             } else {
                 close()
             }
@@ -127,6 +335,11 @@ final class FloatingPanel: NSPanel {
             case 6 where view?.isPenMode == true: // Z
                 view?.undoStroke()
                 return
+            case 24, 27: // ⌘= / ⌘- — text annotation size (editor closed)
+                if view?.isPenMode == true && view?.tool == .text {
+                    view?.adjustTextSize(by: event.keyCode == 24 ? 1 : -1)
+                    return
+                }
             default:
                 break
             }
@@ -152,12 +365,9 @@ final class FloatingPanel: NSPanel {
             case 126: nudge(dx: 0, dy: step); return // ↑
             case 35 where flags.isEmpty: // P
                 if view?.isPenMode == true {
-                    view?.exitPenMode(bake: false)
-                    hoverToolbar.setMode(.normal)
+                    exitAnnotateUI(bake: false)
                 } else {
-                    view?.enterPenMode()
-                    hoverToolbar.setMode(.pen)
-                    hoverToolbar.show()
+                    enterAnnotateUI()
                 }
                 return
             default:

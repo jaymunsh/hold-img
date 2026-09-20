@@ -50,6 +50,8 @@ struct SettingsView: View {
                 Toggle(L10n.tr("새 창을 항상 위에 표시"), isOn: $settings.defaultAlwaysOnTop)
                 Stepper(L10n.tr("최근 캡처 보관: %d개", settings.historyLimit),
                         value: $settings.historyLimit, in: 1...50)
+                Toggle(L10n.tr("초과분 삭제 시 휴지통으로 이동"),
+                       isOn: $settings.trashOnHistoryPurge)
                 HStack {
                     Text(L10n.tr("기본 저장 위치"))
                     Spacer()

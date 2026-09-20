@@ -4,6 +4,51 @@ All notable changes to HoldImg are documented here. The same history is
 available on [GitHub Releases](https://github.com/jaymunsh/hold-img/releases)
 and linked from the bottom of the in-app Settings window.
 
+## [1.1.0] — 2026-09-21
+
+### Annotations
+
+- **Move tool (hand icon)** — grab any placed annotation (pen/highlighter
+  strokes, arrows, rectangles, mosaics, text) and drag it to a new spot;
+  cursor switches to open/closed hand
+- **Multi-line text** — `⇧Return` inserts a line break, `Return` commits,
+  `Esc` cancels; no auto-wrap, the box grows horizontally
+- **Per-annotation font size** — `⌘+`/`⌘-` while the editor is open, or to
+  set the default for the next text
+- **Highlighter backtracking** — dragging back over a stroke before
+  releasing erases the tail instead of stacking darker overlaps;
+  highlight is now lighter (alpha 0.35 → 0.25)
+- **Detached annotation toolbar** — when the tool strip is wider than the
+  panel it floats just above the image instead of covering it; the resize
+  size-badge detaches the same way
+
+### History & settings
+
+- New setting: send purged history files to the Trash instead of
+  permanently deleting them (off by default)
+- Menu bar → "Open History Folder" reveals
+  `~/Library/Application Support/HoldImg/History/` in Finder
+
+### Fixes
+
+- Arrow drags no longer leave stray "dust" — the repaint region now
+  covers the arrowhead tips, and committing a shape forces a full repaint
+- Fixed a crash when selecting the new move tool — toolbar tags ≥ 200 are
+  routed as tools, and color selection is bounds-checked
+- Hover toolbar no longer flickers between overlapping panels or across
+  the gap to the detached strip (topmost-under-cursor check, delayed hide)
+
+### Performance
+
+- Move drags reuse the grabbed shape's cached bounds instead of re-walking
+  every stroke point per mouse event
+
+### Docs
+
+- Korean and English manuals regenerated — all screenshots now come from
+  the bundled local demo page (`docs/lorem-demo.html`), with separate
+  Korean/English overlay captures
+
 ## [1.0.0] — 2026-09-20
 
 First public release.
@@ -49,4 +94,5 @@ First public release.
   re-rendering every vector on each frame
 - Fixed a notification-observer leak on panel close
 
+[1.1.0]: https://github.com/jaymunsh/hold-img/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jaymunsh/hold-img/releases/tag/v1.0.0

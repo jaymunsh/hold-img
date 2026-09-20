@@ -13,6 +13,7 @@ final class SettingsStore: ObservableObject {
         static let defaultAlwaysOnTop = "defaultAlwaysOnTop"
         static let showDockIcon = "showDockIcon"
         static let historyLimit = "historyLimit"
+        static let trashOnHistoryPurge = "trashOnHistoryPurge"
         static let saveDirectory = "saveDirectory"
         static let language = "language"
     }
@@ -53,6 +54,12 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// When on, purged history files go to the Trash instead of being
+    /// deleted outright. Default off — purges are permanent.
+    @Published var trashOnHistoryPurge: Bool {
+        didSet { defaults.set(trashOnHistoryPurge, forKey: Key.trashOnHistoryPurge) }
+    }
+
     @Published var launchAtLogin: Bool {
         didSet { applyLaunchAtLogin() }
     }
@@ -73,6 +80,7 @@ final class SettingsStore: ObservableObject {
         defaultAlwaysOnTop = defaults.bool(forKey: Key.defaultAlwaysOnTop)
         showDockIcon = defaults.bool(forKey: Key.showDockIcon)
         historyLimit = max(1, defaults.integer(forKey: Key.historyLimit))
+        trashOnHistoryPurge = defaults.bool(forKey: Key.trashOnHistoryPurge)
         launchAtLogin = SMAppService.mainApp.status == .enabled
         language = defaults.string(forKey: Key.language) ?? "system"
         if let path = defaults.string(forKey: Key.saveDirectory), !path.isEmpty {

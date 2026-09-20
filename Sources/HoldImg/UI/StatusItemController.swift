@@ -111,10 +111,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard let submenu = recentMenuItem?.submenu else { return }
         submenu.removeAllItems()
         let entries = CaptureHistoryStore.shared.entries()
+        let openFolder = NSMenuItem(title: L10n.tr("기록 폴더 열기"),
+                                  action: #selector(openHistoryFolder),
+                                  keyEquivalent: "")
+        openFolder.target = self
         if entries.isEmpty {
             let empty = NSMenuItem(title: L10n.tr("없음"), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             submenu.addItem(empty)
+            submenu.addItem(.separator())
+            submenu.addItem(openFolder)
         } else {
             for entry in entries {
                 let menuItem = NSMenuItem(
@@ -135,6 +141,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 submenu.addItem(menuItem)
             }
             submenu.addItem(.separator())
+            submenu.addItem(openFolder)
             let clear = NSMenuItem(title: L10n.tr("기록 전체 삭제"),
                                    action: #selector(clearHistory),
                                    keyEquivalent: "")
@@ -199,6 +206,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func clearHistory() {
         CaptureHistoryStore.shared.clear()
+    }
+
+    @objc private func openHistoryFolder() {
+        NSWorkspace.shared.open(CaptureHistoryStore.shared.directoryURL)
     }
 
     @objc private func reopenClosed() {

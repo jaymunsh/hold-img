@@ -102,6 +102,7 @@
 "사각형" = "Rectangle";
 "모자이크" = "Mosaic";
 "텍스트" = "Text";
+"이동 — 주석을 드래그로 옮기기" = "Move — drag annotations to reposition";
 "색상" = "Color";
 "항상 위에 표시" = "Always on Top";
 "클릭-스루 모드" = "Click-Through Mode";
@@ -119,3 +120,16 @@
 /* Settings footer */
 "버전 %@" = "Version %@";
 "업데이트 로그 ↗" = "Release Notes ↗";
+
+/* Highlighter shift constraint */
+"형광펜 직선 (수평/수직)" = "Straight highlighter (H/V)";
+"⇧+드래그" = "⇧+drag";
+
+/* Size badge */
+"원본" = "original";
+
+/* History purge destination */
+"초과분 삭제 시 휴지통으로 이동" = "Move purged captures to Trash";
+
+/* History menu */
+"기록 폴더 열기" = "Open History Folder";

@@ -12,6 +12,9 @@ final class CaptureHistoryStore {
     private let directory: URL
     private let fileManager = FileManager.default
 
+    /// On-disk folder holding the history PNGs — exposed for Finder reveal.
+    var directoryURL: URL { directory }
+
     init(directory: URL? = nil) {
         if let directory {
             self.directory = directory
@@ -42,6 +45,7 @@ final class CaptureHistoryStore {
     }
 
     /// Newest first.
+    @MainActor
     func entries() -> [Entry] {
         guard let files = try? fileManager.contentsOfDirectory(
             at: directory,
@@ -62,13 +66,24 @@ final class CaptureHistoryStore {
         let limit = SettingsStore.shared.historyLimit
         let all = entries()
         for entry in all.dropFirst(max(0, limit)) {
-            try? fileManager.removeItem(at: entry.url)
+            delete(entry.url)
         }
     }
 
+    @MainActor
     func clear() {
         for entry in entries() {
-            try? fileManager.removeItem(at: entry.url)
+            delete(entry.url)
+        }
+    }
+
+    /// Settings-gated: Trash when enabled, permanent delete otherwise.
+    @MainActor
+    private func delete(_ url: URL) {
+        if SettingsStore.shared.trashOnHistoryPurge {
+            try? fileManager.trashItem(at: url, resultingItemURL: nil)
+        } else {
+            try? fileManager.removeItem(at: url)
         }
     }
 
