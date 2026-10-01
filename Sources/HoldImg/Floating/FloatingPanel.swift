@@ -3,6 +3,11 @@ import AppKit
 /// Borderless panel that floats an image above other windows.
 final class FloatingPanel: NSPanel {
     private(set) var image: NSImage
+    /// On-disk backing for `image` (history PNG or opened file) — lets the
+    /// closed-panel stack hold a URL instead of retaining the bitmap.
+    /// Cleared by `setImage`, since transforms/annotation bakes diverge
+    /// from the file.
+    var sourceURL: URL?
     let hoverToolbar = PanelToolbar()
 
     /// Detached child window hosting the annotation toolbar while pen mode
@@ -301,6 +306,7 @@ final class FloatingPanel: NSPanel {
 
     func setImage(_ newImage: NSImage) {
         image = newImage
+        sourceURL = nil  // transformed/baked — no longer matches the file
         (contentView as? FloatingImageView)?.image = newImage
     }
 

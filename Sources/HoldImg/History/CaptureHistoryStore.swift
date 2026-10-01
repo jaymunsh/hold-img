@@ -28,20 +28,25 @@ final class CaptureHistoryStore {
                                          withIntermediateDirectories: true)
     }
 
-    @MainActor
-    func add(_ image: NSImage) {
-        guard let cg = image.cgImageRef else { return }
+    /// Writes the image into history; returns the file URL immediately
+    /// (the PNG encodes asynchronously — callers use it as a cheap on-disk
+    /// backing reference instead of retaining the bitmap).
+    @MainActor @discardableResult
+    func add(_ image: NSImage) -> URL? {
+        guard let cg = image.cgImageRef else { return nil }
         let directory = self.directory
         let name = Self.filenameFormatter.string(from: Date())
             + "-\(UUID().uuidString.prefix(6)).png"
+        let url = directory.appendingPathComponent(name)
         // PNG encoding a Retina frame costs ~100-300ms — too long to spend
         // on the main thread while the new panel is animating in.
         Task.detached(priority: .utility) {
             guard let data = NSBitmapImageRep(cgImage: cg)
                 .representation(using: .png, properties: [:]) else { return }
-            try? data.write(to: directory.appendingPathComponent(name))
+            try? data.write(to: url)
             await MainActor.run { CaptureHistoryStore.shared.prune() }
         }
+        return url
     }
 
     /// Newest first.

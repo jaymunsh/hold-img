@@ -4,6 +4,18 @@ All notable changes to HoldImg are documented here. The same history is
 available on [GitHub Releases](https://github.com/jaymunsh/hold-img/releases)
 and linked from the bottom of the in-app Settings window.
 
+## [Unreleased]
+
+### Performance
+
+- History menu thumbnails now decode at ~112px via ImageIO instead of
+  keeping the full-resolution PNG (~85MB saved with 30 entries)
+- Closed-panel restore no longer retains the bitmap — panels remember
+  their on-disk file and reload on reopen; only pasted/transformed
+  images still hold memory
+- Hiding all panels drops each panel's composited bitmap (rebuilt when
+  shown again)
+
 ## [1.1.0] — 2026-09-21
 
 ### Annotations

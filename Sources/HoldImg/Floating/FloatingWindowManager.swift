@@ -10,8 +10,11 @@ final class FloatingWindowManager {
     /// True while all panels are parked off-screen (GrabIt-style hide all).
     private(set) var allHidden = false
 
-    /// Recently closed panels (image + frame) for undo-close, newest last.
-    private var closedStack: [(image: NSImage, frame: CGRect)] = []
+    /// Recently closed panels for undo-close, newest last. Stores the
+    /// on-disk URL when the image came from a file (history captures) so
+    /// up to 10 closed panels cost ~0 RAM; panels without a file (pasted
+    /// images, transformed/baked captures) retain the bitmap instead.
+    private var closedStack: [(image: NSImage?, url: URL?, frame: CGRect)] = []
 
     /// willClose observer tokens per panel — removed when the panel closes,
     /// otherwise NotificationCenter would retain them forever.
@@ -19,20 +22,24 @@ final class FloatingWindowManager {
 
     /// Shows a floating panel occupying `frameInScreen` (global AppKit coords).
     @discardableResult
-    func show(image: NSImage, frameInScreen rect: CGRect) -> FloatingPanel {
+    func show(image: NSImage, frameInScreen rect: CGRect,
+              sourceURL: URL? = nil) -> FloatingPanel {
         let panel = FloatingPanel(image: image, frameInScreen: rect)
+        panel.sourceURL = sourceURL
         return present(panel)
     }
 
     /// Shows a floating panel near a screen point, centered, scaled down to fit.
     @discardableResult
-    func show(image: NSImage, near point: CGPoint) -> FloatingPanel {
+    func show(image: NSImage, near point: CGPoint,
+              sourceURL: URL? = nil) -> FloatingPanel {
         let size = fittedSize(for: image.size)
         let origin = CGPoint(x: point.x - size.width / 2 + CGFloat(cascadeStep) * 20,
                              y: point.y - size.height / 2 - CGFloat(cascadeStep) * 20)
         cascadeStep = (cascadeStep + 1) % 8
         let panel = FloatingPanel(image: image,
                                   frameInScreen: CGRect(origin: origin, size: size))
+        panel.sourceURL = sourceURL
         return present(panel)
     }
 
@@ -40,7 +47,10 @@ final class FloatingWindowManager {
     func toggleHidden() {
         allHidden.toggle()
         if allHidden {
-            panels.forEach { $0.orderOut(nil) }
+            panels.forEach { panel in
+                (panel.contentView as? FloatingImageView)?.dropCompositeCache()
+                panel.orderOut(nil)
+            }
         } else {
             panels.forEach { $0.orderFrontRegardless() }
         }
@@ -58,13 +68,17 @@ final class FloatingWindowManager {
 
     var canReopen: Bool { !closedStack.isEmpty }
 
-    /// Reopens the most recently closed panel at its previous frame.
+    /// Reopens the most recently closed panel at its previous frame,
+    /// reloading the image from disk when the entry is file-backed.
     func reopenLastClosed() {
-        guard let last = closedStack.popLast() else {
-            NSSound.beep()
+        while let last = closedStack.popLast() {
+            let image = last.url.flatMap { NSImage(contentsOf: $0) }
+                ?? last.image
+            guard let image else { continue }  // file was pruned/deleted
+            show(image: image, frameInScreen: last.frame, sourceURL: last.url)
             return
         }
-        show(image: last.image, frameInScreen: last.frame)
+        NSSound.beep()
     }
 
     private func present(_ panel: FloatingPanel) -> FloatingPanel {
@@ -82,7 +96,10 @@ final class FloatingWindowManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.panels.removeAll { $0 === closing }
-                self.closedStack.append((closing.image, closing.frame))
+                self.closedStack.append((
+                    image: closing.sourceURL == nil ? closing.image : nil,
+                    url: closing.sourceURL,
+                    frame: closing.frame))
                 if self.closedStack.count > 10 { self.closedStack.removeFirst() }
                 let id = ObjectIdentifier(closing)
                 if let observer = self.closeObservers.removeValue(forKey: id) {

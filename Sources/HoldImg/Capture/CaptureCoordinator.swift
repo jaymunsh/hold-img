@@ -51,8 +51,11 @@ final class CaptureCoordinator {
     }
 
     /// Floats an image that came from the pasteboard or a file.
-    func presentExternalImage(_ image: NSImage, near point: NSPoint? = nil) {
-        FloatingWindowManager.shared.show(image: image, near: point ?? NSEvent.mouseLocation)
+    func presentExternalImage(_ image: NSImage, near point: NSPoint? = nil,
+                              sourceURL: URL? = nil) {
+        FloatingWindowManager.shared.show(image: image,
+                                          near: point ?? NSEvent.mouseLocation,
+                                          sourceURL: sourceURL)
     }
 
     // MARK: - Session
@@ -144,8 +147,12 @@ final class CaptureCoordinator {
     // MARK: - Output
 
     private func present(_ image: NSImage, inScreenRect rect: CGRect) {
-        FloatingWindowManager.shared.show(image: image, frameInScreen: rect)
-        CaptureHistoryStore.shared.add(image)
+        // add() returns the history file URL before the async PNG write
+        // lands — the panel keeps it as its on-disk backing so closing the
+        // panel doesn't have to retain the bitmap for undo-close.
+        let url = CaptureHistoryStore.shared.add(image)
+        FloatingWindowManager.shared.show(image: image, frameInScreen: rect,
+                                          sourceURL: url)
         if SettingsStore.shared.autoCopyOnCapture {
             ClipboardService.copy(image)
         }

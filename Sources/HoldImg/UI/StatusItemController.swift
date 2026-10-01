@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import KeyboardShortcuts
 
 @MainActor
@@ -9,12 +10,24 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var reopenMenuItem: NSMenuItem?
     /// History PNGs are write-once files, so decoded thumbnails are safe to
     /// keep keyed by path — avoids re-decoding every entry on each menu open.
-    private let thumbnailCache = NSCache<NSString, NSImage>()
+    /// Thumbnails are real downscaled bitmaps (ImageIO), never the full-res
+    /// PNG — a Retina capture decodes to tens of MB per entry.
+    private let thumbnailCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 60
+        return cache
+    }()
 
     override init() {
         super.init()
+        item.autosaveName = "HoldImg.Main"
+        item.behavior = []
         item.button?.image = Self.menuBarImage()
+        // Command-dragging a status item out of the menu bar can persist it as
+        // hidden. A fresh HoldImg launch must always restore its only UI entry.
+        item.isVisible = true
         rebuildMenu()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.item.isVisible = true }
         NotificationCenter.default.addObserver(
             forName: SettingsStore.languageDidChange,
             object: nil, queue: .main) { [weak self] _ in
@@ -133,8 +146,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 let key = entry.url.path as NSString
                 if let cached = thumbnailCache.object(forKey: key) {
                     menuItem.image = cached
-                } else if let image = NSImage(contentsOf: entry.url) {
-                    image.size = thumbnailSize(for: image.size)
+                } else if let image = Self.thumbnail(for: entry.url) {
                     thumbnailCache.setObject(image, forKey: key)
                     menuItem.image = image
                 }
@@ -150,10 +162,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func thumbnailSize(for size: CGSize) -> CGSize {
-        let height: CGFloat = 28
-        let scale = height / max(size.height, 1)
-        return CGSize(width: max(16, size.width * scale), height: height)
+    /// Decodes a ~112px thumbnail straight from the PNG on disk. Using
+    /// `NSImage(contentsOf:)` + a smaller point size would still decode and
+    /// retain the full-resolution bitmap.
+    private static func thumbnail(for url: URL) -> NSImage? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceThumbnailMaxPixelSize: 112,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+              ] as CFDictionary) else { return nil }
+        let scale = 28 / CGFloat(max(cg.height, 1))
+        let size = NSSize(width: max(16, CGFloat(cg.width) * scale), height: 28)
+        return NSImage(cgImage: cg, size: size)
     }
 
     private static let entryDateFormatter: DateFormatter = {
@@ -193,7 +214,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             if let image = NSImage(contentsOf: url) {
-                CaptureCoordinator.shared.presentExternalImage(image)
+                CaptureCoordinator.shared.presentExternalImage(image, sourceURL: url)
             }
         }
     }
@@ -201,7 +222,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func refloatEntry(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL,
               let image = NSImage(contentsOf: url) else { return }
-        CaptureCoordinator.shared.presentExternalImage(image)
+        CaptureCoordinator.shared.presentExternalImage(image, sourceURL: url)
     }
 
     @objc private func clearHistory() {

@@ -101,6 +101,28 @@ Everything user-facing is `@MainActor`. Concurrency notes:
   **per panel** and must remove it on close (`closeObservers`) — a leak
   here retained panels forever; this was a real fixed bug, don't regress it.
 
+### Memory discipline (the app idles at ~11MB — keep it that way)
+
+Retina captures are tens of MB decoded; anything that retains images
+must be deliberate:
+
+- **Menu thumbnails** come from `CGImageSourceCreateThumbnailAtIndex`
+  (~112px), never `NSImage(contentsOf:)` — that decodes the full PNG and
+  was the biggest leak (~85MB for 30 history entries). Cache is capped
+  (`countLimit = 60`).
+- **`FloatingPanel.sourceURL`** tracks the on-disk file behind the image
+  (history PNG, opened file). `setImage` clears it — a rotated/flipped/
+  baked panel no longer matches the file.
+- **`closedStack` stores URLs, not bitmaps**, when a source file exists;
+  `reopenLastClosed` reloads from disk and skips entries whose file was
+  pruned. Only file-less panels (pasted images, transformed captures)
+  retain their `NSImage`.
+- **Hiding all panels drops each composite cache** — rebuilt lazily on
+  unhide; hidden panels still keep their source image (that's the
+  feature).
+- `CaptureOverlayView`'s `PixelSampler` (~60MB RGBA copy) stays lazy —
+  don't touch it eagerly.
+
 ### Capture session
 
 1. Hotkey/menu → `CaptureCoordinator.shared.startRegion/WindowCapture()`.

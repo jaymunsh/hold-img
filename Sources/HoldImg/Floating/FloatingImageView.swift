@@ -129,6 +129,14 @@ final class FloatingImageView: NSView {
         compositeCache = nil
     }
 
+    /// Releases the composited bitmap while the panel is hidden — it is
+    /// rebuilt lazily on the next draw, so hiding N panels frees N copies
+    /// of the rendered image.
+    func dropCompositeCache() {
+        compositeCache = nil
+        compositeSize = .zero
+    }
+
     private func rebuildComposite() {
         let size = bounds.size
         let cached = NSImage(size: size, flipped: false) { rect in
